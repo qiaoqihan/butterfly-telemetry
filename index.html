@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>仿生蝴蝶飞行器综合监测仪表盘</title>
+
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- TensorFlow.js + COCO-SSD（用于动物识别） -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+<script>
+  // Tailwind 自定义主题配置：深色科技风
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base: '#0F172A',      // 页面背景
+          panel: '#111C33',     // 卡片底色
+          panel2: '#0B1426',    // 卡片内嵌底色
+          primary: '#165DFF',   // 主色
+          cyan: '#36CFC9',      // 辅助1
+          orange: '#FF7D00',    // 辅助2
+          purple: '#A855F7',    // 辅助3
+          txt: '#E2E8F0',       // 常规文字
+          mute: '#64748B',      // 次要文字
+        },
+        boxShadow: {
+          glow: '0 0 16px rgba(22,93,255,0.45)',
+          glowCyan: '0 0 16px rgba(54,207,201,0.45)',
+          glowOrange: '0 0 16px rgba(255,125,0,0.45)',
+          card: '0 8px 30px rgba(0,0,0,0.45)',
+        },
+        keyframes: {
+          floatY: {
+            '0%,100%': { transform: 'translateY(0)' },
+            '50%': { transform: 'translateY(-2px)' },
+          },
+          pulseRing: {
+            '0%': { boxShadow: '0 0 0 0 rgba(22,93,255,0.55)' },
+            '70%': { boxShadow: '0 0 0 10px rgba(22,93,255,0)' },
+            '100%': { boxShadow: '0 0 0 0 rgba(22,93,255,0)' },
+          },
+          scan: {
+            '0%': { transform: 'translateY(-100%)' },
+            '100%': { transform: 'translateY(100%)' },
+          },
+        },
+        animation: {
+          floatY: 'floatY 3s ease-in-out infinite',
+          pulseRing: 'pulseRing 1.8s infinite',
+          scan: 'scan 3.5s linear infinite',
+        },
+      },
+    },
+  };
+</script>
+
+<style>
+  /* 全局滚动条与基础样式 */
+  html, body { background: #0F172A; color: #E2E8F0; }
+  body { font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+  /* 卡片基础样式：发光边框 + 悬浮上浮 */
+  .card {
+    background: linear-gradient(180deg, #111C33 0%, #0E1830 100%);
+    border: 1px solid rgba(54,79,116,0.55);
+    border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+    transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(600px 80px at 50% -10%, rgba(22,93,255,0.15), transparent 70%);
+    pointer-events: none;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(22,93,255,0.35);
+    border-color: rgba(22,93,255,0.6);
+  }
+
+  /* 标题装饰条 */
+  .title-bar::before {
+    content: '';
+    display: inline-block;
+    width: 4px; height: 16px;
+    background: linear-gradient(180deg, #165DFF, #36CFC9);
+    border-radius: 4px;
+    margin-right: 8px;
+    vertical-align: -3px;
+  }
+
+  /* 按钮 */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid transparent;
+    transition: all .2s ease;
+    cursor: pointer; user-select: none;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: #165DFF; color: #fff; }
+  .btn-primary:hover { background: #2E6FFF; box-shadow: 0 0 16px rgba(22,93,255,0.5); }
+  .btn-ghost { background: rgba(22,93,255,0.08); color: #E2E8F0; border-color: rgba(22,93,255,0.4); }
+  .btn-ghost:hover { background: rgba(22,93,255,0.18); }
+  .btn-danger { background: rgba(239,68,68,0.12); color: #FCA5A5; border-color: rgba(239,68,68,0.4); }
+  .btn-danger:hover { background: rgba(239,68,68,0.25); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* 状态点 */
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-on  { background: #22C55E; box-shadow: 0 0 8px #22C55E; }
+  .dot-off { background: #EF4444; box-shadow: 0 0 8px #EF4444; }
+  .dot-warn { background: #FF7D00; box-shadow: 0 0 8px #FF7D00; }
+
+  /* 视频边框微光 */
+  .video-frame {
+    border: 1px solid rgba(22,93,255,0.5);
+    box-shadow: 0 0 0 1px rgba(22,93,255,0.15), 0 0 30px rgba(22,93,255,0.25) inset;
+    position: relative;
+  }
+  .video-frame::after {
+    content: '';
+    position: absolute; left: 0; right: 0; top: 0; height: 30%;
+    background: linear-gradient(180deg, rgba(54,207,201,0.18), transparent);
+    animation: scan 3.5s linear infinite;
+    pointer-events: none;
+  }
+
+  /* 数值高亮告警 */
+  .alarm { color: #FF7D00 !important; text-shadow: 0 0 8px rgba(255,125,0,0.7); animation: floatY 1s infinite; }
+
+  /* 大数字 */
+  .big-num { font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  /* 网格背景 */
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(22,93,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(22,93,255,0.06) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* 通道进度条 */
+  .ch-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; position: relative; }
+  .ch-bar > i { display:block; height:100%; border-radius:4px; transition: width .15s linear; }
+
+  /* 电机指针转动 */
+  .needle { transform-origin: 50px 50px; transition: transform .2s ease; }
+</style>
+</head>
+
+<body class="h-screen overflow-hidden flex flex-col grid-bg">
+
+<!-- ============= 环境提示条 ============= -->
+<div id="envTip" class="hidden bg-orange/15 border-b border-orange/40 text-orange text-xs px-4 py-2 text-center"></div>
+
+<!-- ============= 顶部导航栏 ============= -->
+<header class="sticky top-0 z-30 backdrop-blur bg-base/80 border-b border-slate-800 flex-shrink-0">
+  <div class="px-4 py-2 flex items-center gap-4 flex-wrap">
+    <!-- Logo + 标题 -->
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-primary/15 border border-primary/40 flex items-center justify-center shadow-glow">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#36CFC9" stroke-width="1.6">
+          <path d="M12 12c-2-4-7-5-9-3-1.5 1.5-1 4 1 5 2 1 5 0 8-2z"/>
+          <path d="M12 12c2-4 7-5 9-3 1.5 1.5 1 4-1 5-2 1-5 0-8-2z"/>
+          <path d="M12 12v8" stroke="#165DFF"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-base font-bold tracking-wide">仿生蝴蝶飞行器 · 综合监测仪表盘</h1>
+        <p class="text-[11px] text-mute">Biomimetic Butterfly Aircraft Telemetry Dashboard</p>
+      </div>
+    </div>
+
+    <!-- 状态总览 -->
+    <div class="flex items-center gap-5 ml-2 flex-1 flex-wrap">
+      <div class="flex items-center gap-2 text-xs">
+        <span class="dot dot-off" id="dotCam"></span>
+        <span class="text-mute">摄像头：</span>
+        <span id="stCam" class="text-txt">未开启</span>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="dot dot-off" id="dotSerial"></span>
+        <span class="text-mute">串口：</span>
+        <span id="stSerial" class="text-txt">未连接</span>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="dot dot-off" id="dotData"></span>
+        <span class="text-mute">数据：</span>
+        <span id="stData" class="text-txt">--</span>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="text-mute">帧率：</span>
+        <span id="stFps" class="text-cyan big-num">0</span>
+        <span class="text-mute">Hz</span>
+      </div>
+    </div>
+
+    <!-- 全局控制按钮 -->
+    <div class="flex items-center gap-2">
+      <button id="btnCam" class="btn btn-primary">开启摄像头</button>
+      <button id="btnSerial" class="btn btn-ghost">连接串口</button>
+      <button id="btnMock" class="btn btn-ghost" title="无设备时模拟数据">模拟数据</button>
+    </div>
+  </div>
+</header>
+
+<!-- ============= 主体内容 ============= -->
+<main class="flex-1 overflow-hidden flex flex-col gap-3 p-3 min-h-0">
+
+  <!-- ===== 第一行：摄像头 + 姿态传感器 ===== -->
+  <section class="flex-1 grid grid-cols-12 gap-3 min-h-0">
+    <!-- 摄像头卡片 -->
+    <div class="card p-3 col-span-7 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+        <h2 class="title-bar text-sm font-semibold">USB 摄像头实时画面</h2>
+        <div class="flex items-center gap-2">
+          <span id="camRes" class="text-[11px] text-mute">--</span>
+          <button id="btnDetect" class="btn btn-ghost" disabled title="开启/关闭目标识别">开启识别</button>
+          <button id="btnCamClose" class="btn btn-danger" disabled>关闭摄像头</button>
+        </div>
+      </div>
+      <div class="video-frame relative w-full bg-black rounded-lg overflow-hidden flex-1 min-h-0 flex">
+        <!-- 左：原始图像 -->
+        <div class="relative flex-1 overflow-hidden" id="origView">
+          <video id="video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <div class="absolute top-2 left-2 text-[11px] text-cyan/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur border border-cyan/20">CAM · 原始</div>
+        </div>
+        <!-- 分割线 -->
+        <div id="viewDivider" class="w-px bg-primary/50 flex-shrink-0 hidden"></div>
+        <!-- 右：识别图像 -->
+        <div class="relative flex-1 overflow-hidden hidden" id="detView">
+          <video id="video2" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <!-- 识别叠加画布 -->
+          <canvas id="detectCanvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+          <div class="absolute top-2 left-2 text-[11px] text-orange/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur border border-orange/30">CAM · 识别</div>
+        </div>
+        <!-- 占位/异常提示 -->
+        <div id="camOverlay" class="absolute inset-0 flex flex-col items-center justify-center text-center text-mute z-10">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.3">
+            <rect x="3" y="6" width="14" height="12" rx="2"/>
+            <path d="M17 10l4-2v8l-4-2z"/>
+          </svg>
+          <p class="mt-3 text-sm">点击右上角"开启摄像头"启动视频流</p>
+          <p class="text-[11px] text-mute mt-1">需在 localhost 或 HTTPS 环境运行，并授权摄像头权限</p>
+        </div>
+        <!-- 时间HUD -->
+        <div class="absolute top-2 right-2 text-[11px] text-cyan/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur z-10" id="camTime">--:--:--</div>
+        <!-- 识别结果HUD（底部） -->
+        <div id="detectHud" class="absolute bottom-2 left-2 right-2 hidden z-10">
+          <div class="flex items-center justify-between gap-3 text-[11px] bg-black/60 backdrop-blur rounded px-2 py-1.5 border border-primary/30">
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="flex items-center gap-1.5">
+                <span id="dotDetect" class="dot dot-off"></span>
+                <span class="text-mute">识别：</span>
+                <span id="detectStatus" class="text-txt">--</span>
+              </span>
+              <span class="text-mute">目标：<span id="detectTarget" class="text-orange big-num">无</span></span>
+              <span class="text-mute">置信度：<span id="detectConf" class="text-cyan big-num">0%</span></span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="text-mute">亮度：<span id="detectLuma" class="text-cyan big-num">0</span></span>
+              <span class="text-mute">运动：<span id="detectMotion" class="text-orange big-num">0%</span></span>
+              <span class="text-mute">主色：<span id="detectColorSw" class="inline-block w-3 h-3 rounded-sm align-middle border border-white/30" style="background:#666"></span><span id="detectColor" class="text-txt ml-1">#666666</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 姿态传感器卡片 -->
+    <div class="card p-3 col-span-5 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+        <h2 class="title-bar text-sm font-semibold">姿态传感器 · 陀螺 / 加速度 / 磁力</h2>
+        <span class="text-[11px] text-mute">三轴实时曲线</span>
+      </div>
+      <div class="grid grid-rows-3 gap-2 flex-1 min-h-0">
+        <!-- 陀螺仪 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800 flex flex-col min-h-0">
+          <div class="flex items-center justify-between mb-1 flex-shrink-0">
+            <span class="text-xs text-cyan font-semibold">陀螺仪 Gyro (°/s)</span>
+            <div class="flex gap-2 text-[10px] big-num">
+              <span class="text-mute">X:</span><span id="gx" class="text-cyan">0.00</span>
+              <span class="text-mute">Y:</span><span id="gy" class="text-cyan">0.00</span>
+              <span class="text-mute">Z:</span><span id="gz" class="text-cyan">0.00</span>
+            </div>
+          </div>
+          <div class="flex-1 min-h-0 relative"><canvas id="chartGyro" class="absolute inset-0"></canvas></div>
+        </div>
+        <!-- 加速度计 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800 flex flex-col min-h-0">
+          <div class="flex items-center justify-between mb-1 flex-shrink-0">
+            <span class="text-xs text-orange font-semibold">加速度 Accel (m/s²)</span>
+            <div class="flex gap-2 text-[10px] big-num">
+              <span class="text-mute">X:</span><span id="ax" class="text-orange">0.00</span>
+              <span class="text-mute">Y:</span><span id="ay" class="text-orange">0.00</span>
+              <span class="text-mute">Z:</span><span id="az" class="text-orange">0.00</span>
+            </div>
+          </div>
+          <div class="flex-1 min-h-0 relative"><canvas id="chartAcc" class="absolute inset-0"></canvas></div>
+        </div>
+        <!-- 磁力计 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800 flex flex-col min-h-0">
+          <div class="flex items-center justify-between mb-1 flex-shrink-0">
+            <span class="text-xs text-purple font-semibold">磁力计 Mag (μT)</span>
+            <div class="flex gap-2 text-[10px] big-num">
+              <span class="text-mute">X:</span><span id="mx" class="text-purple">0.00</span>
+              <span class="text-mute">Y:</span><span id="my" class="text-purple">0.00</span>
+              <span class="text-mute">Z:</span><span id="mz" class="text-purple">0.00</span>
+            </div>
+          </div>
+          <div class="flex-1 min-h-0 relative"><canvas id="chartMag" class="absolute inset-0"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 第二行：气压 / GPS / 遥控 / 电机 ===== -->
+  <section class="flex-1 grid grid-cols-12 gap-3 min-h-0">
+    <!-- 气压 & 高度 -->
+    <div class="card p-3 col-span-3 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+        <h2 class="title-bar text-sm font-semibold">气压 & 高度</h2>
+        <span class="text-[11px] text-mute" id="altDelta">Δ 0.00 m</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-2 flex-shrink-0">
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800 text-center">
+          <div class="text-[10px] text-mute">气压 hPa</div>
+          <div class="text-xl big-num text-primary" id="pVal">0.00</div>
+        </div>
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800 text-center">
+          <div class="text-[10px] text-mute">高度 m</div>
+          <div class="text-xl big-num text-cyan" id="aVal">0.00</div>
+        </div>
+      </div>
+      <div class="flex-1 min-h-0 relative"><canvas id="chartAlt" class="absolute inset-0"></canvas></div>
+    </div>
+
+    <!-- GPS 信息 -->
+    <div class="card p-3 col-span-3 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+        <h2 class="title-bar text-sm font-semibold">GPS 定位</h2>
+        <span id="gpsStatus" class="text-[11px] text-mute">未定位</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2 flex-1 min-h-0 content-start">
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="text-[10px] text-mute">经度</div>
+          <div id="gpsLon" class="text-sm big-num text-cyan">--</div>
+        </div>
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="text-[10px] text-mute">纬度</div>
+          <div id="gpsLat" class="text-sm big-num text-cyan">--</div>
+        </div>
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="text-[10px] text-mute">地速 m/s</div>
+          <div id="gpsSpd" class="text-sm big-num text-orange">0.00</div>
+        </div>
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="text-[10px] text-mute">卫星</div>
+          <div><span id="gpsSat" class="text-sm big-num text-primary">0</span><span class="text-[10px] text-mute ml-1">颗</span></div>
+        </div>
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800 col-span-2">
+          <div class="text-[10px] text-mute">定位时间</div>
+          <div id="gpsTime" class="text-xs big-num text-txt">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 遥控器通道 -->
+    <div class="card p-3 col-span-3 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+        <h2 class="title-bar text-sm font-semibold">遥控器 11 通道</h2>
+        <span class="text-[11px] text-mute">1000~2000</span>
+      </div>
+      <div id="rcList" class="flex flex-col gap-1 flex-1 min-h-0 overflow-auto pr-1"></div>
+    </div>
+
+    <!-- 电机角度 -->
+    <div class="card p-3 col-span-3 flex flex-col min-h-0">
+      <div class="flex items-center justify-between mb-2 flex-shrink-0">
+        <h2 class="title-bar text-sm font-semibold">左右电机角度</h2>
+        <span class="text-[11px] text-mute">0~360°</span>
+      </div>
+      <div id="motorList" class="grid grid-cols-2 gap-2 flex-1 min-h-0 content-center"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ====================== JavaScript ====================== -->
+<script>
+/* ============================================================
+ * 仿生蝴蝶飞行器综合监测仪表盘
+ * 模块划分：
+ *   1) 环境检测        EnvCheck
+ *   2) 摄像头模块      Camera
+ *   3) 串口模块        Serial
+ *   4) 数据分发        Dispatcher
+ *   5) 各类UI更新      UI
+ *   6) 图表            Charts
+ *   7) 模拟数据        Mock
+ * ============================================================ */
+
+/* ---------- 1. 环境检测 ---------- */
+const EnvCheck = {
+  init() {
+    const isSecure = location.protocol === 'https:' ||
+                     location.hostname === 'localhost' ||
+                     location.hostname === '127.0.0.1';
+    if (!isSecure) {
+      const tip = document.getElementById('envTip');
+      tip.textContent = '⚠ 当前环境非 localhost/HTTPS，摄像头与 Web Serial API 将无法使用。请通过本地服务器或 HTTPS 访问本页面。';
+      tip.classList.remove('hidden');
+    }
+    if (!('serial' in navigator)) {
+      const tip = document.getElementById('envTip');
+      tip.textContent = (tip.textContent ? tip.textContent + ' | ' : '') +
+        '⚠ 当前浏览器不支持 Web Serial API，请使用 Chrome/Edge 89+。';
+      tip.classList.remove('hidden');
+    }
+  }
+};
+
+/* ---------- 2. 摄像头模块 ---------- */
+const Camera = {
+  stream: null,
+  video: document.getElementById('video'),
+  video2: document.getElementById('video2'),
+  overlay: document.getElementById('camOverlay'),
+  btnOpen: document.getElementById('btnCam'),
+  btnClose: document.getElementById('btnCamClose'),
+  btnDetect: document.getElementById('btnDetect'),
+  resEl: document.getElementById('camRes'),
+  timeEl: document.getElementById('camTime'),
+  timer: null,
+
+  init() {
+    this.btnOpen.addEventListener('click', () => this.open());
+    this.btnClose.addEventListener('click', () => this.close());
+    this.btnDetect.addEventListener('click', () => {
+      if (Detector.active) Detector.stop();
+      else Detector.start();
+    });
+  },
+  async open() {
+    try {
+      this.setStatus('connecting');
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      // 同一视频流绑定到两个 video 元素（原始 + 识别）
+      this.video.srcObject = this.stream;
+      this.video2.srcObject = this.stream;
+      this.overlay.classList.add('hidden');
+      this.btnOpen.disabled = true;
+      this.btnClose.disabled = false;
+      this.btnDetect.disabled = false;  // 摄像头开启后允许识别
+      const track = this.stream.getVideoTracks()[0];
+      const s = track.getSettings();
+      this.resEl.textContent = `${s.width||'?'}×${s.height||'?'} @ ${s.frameRate?s.frameRate.toFixed(0):'?'}fps`;
+      this.setStatus('on');
+      // 时间显示
+      this.timer = setInterval(() => this.updateTime(), 1000);
+    } catch (e) {
+      let msg = '摄像头开启失败';
+      if (e.name === 'NotAllowedError') msg = '摄像头权限被拒绝，请在浏览器设置中授权';
+      else if (e.name === 'NotFoundError') msg = '未检测到摄像头设备';
+      else if (e.name === 'NotReadableError') msg = '摄像头被其他程序占用';
+      else msg = '摄像头开启失败：' + e.message;
+      this.overlay.querySelector('p').textContent = msg;
+      this.setStatus('off');
+    }
+  },
+  close() {
+    // 关闭摄像头时同步停止识别
+    Detector.stop();
+    if (this.stream) {
+      this.stream.getTracks().forEach(t => t.stop());
+      this.stream = null;
+    }
+    this.video.srcObject = null;
+    this.video2.srcObject = null;
+    this.overlay.classList.remove('hidden');
+    this.overlay.querySelector('p').textContent = '点击右上角"开启摄像头"启动视频流';
+    this.btnOpen.disabled = false;
+    this.btnClose.disabled = true;
+    this.btnDetect.disabled = true;
+    this.resEl.textContent = '--';
+    this.setStatus('off');
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  },
+  updateTime() {
+    const d = new Date();
+    this.timeEl.textContent = d.toLocaleTimeString();
+  },
+  setStatus(s) {
+    const dot = document.getElementById('dotCam');
+    const txt = document.getElementById('stCam');
+    if (s === 'on') { dot.className = 'dot dot-on'; txt.textContent = '已开启'; txt.className = 'text-cyan'; }
+    else if (s === 'connecting') { dot.className = 'dot dot-warn'; txt.textContent = '连接中…'; txt.className = 'text-orange'; }
+    else { dot.className = 'dot dot-off'; txt.textContent = '未开启'; txt.className = 'text-txt'; }
+  }
+};
+
+/* ---------- 3. 动物识别模块（COCO-SSD） ---------- */
+const Detector = {
+  active: false,           // 是否正在识别
+  model: null,             // 加载后的 COCO-SSD 模型
+  loading: false,          // 模型加载中
+  rafId: null,             // requestAnimationFrame 句柄
+  lastFrame: 0,            // 上一帧时间，用于限频
+  interval: 120,           // 检测间隔(ms)，避免占用过高CPU
+  video: document.getElementById('video2'),  // 识别视图的视频源
+  canvas: document.getElementById('detectCanvas'),
+  ctx: null,
+  hud: document.getElementById('detectHud'),
+  btn: document.getElementById('btnDetect'),
+  detView: document.getElementById('detView'),
+  divider: document.getElementById('viewDivider'),
+
+  // COCO-SSD 中包含的动物类别
+  ANIMALS: ['bird','cat','dog','horse','sheep','cow','elephant','bear','zebra','giraffe'],
+  // 中文映射
+  CN: {
+    bird:'鸟类', cat:'猫', dog:'狗', horse:'马', sheep:'羊',
+    cow:'牛', elephant:'大象', bear:'熊', zebra:'斑马', giraffe:'长颈鹿'
+  },
+
+  async init() {
+    this.ctx = this.canvas.getContext('2d');
+    // 预加载模型（在后台进行，不阻塞页面）
+    try {
+      this.setStatus('loading');
+      this.model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      this.setStatus('ready');
+    } catch (e) {
+      console.error('识别模型加载失败：', e);
+      this.setStatus('error');
+    }
+  },
+  async start() {
+    if (!this.model) {
+      // 模型尚未就绪，先等待加载
+      if (!this.loading) this.init();
+      this.setStatus('loading');
+      const wait = setInterval(() => {
+        if (this.model) {
+          clearInterval(wait);
+          this._run();
+        } else if (!this.loading && !this.model) {
+          // 加载失败则退出
+          clearInterval(wait);
+        }
+      }, 300);
+      return;
+    }
+    this._run();
+  },
+  _run() {
+    this.active = true;
+    // 显示右侧识别视图，形成左右分屏
+    this.detView.classList.remove('hidden');
+    this.divider.classList.remove('hidden');
+    this.hud.classList.remove('hidden');
+    this.btn.textContent = '停止识别';
+    this.btn.classList.remove('btn-ghost');
+    this.btn.classList.add('btn-primary');
+    this.setStatus('on');
+    this.loop();
+  },
+  stop() {
+    this.active = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
+    // 清空叠加画布
+    if (this.canvas.width > 0) this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // 隐藏右侧识别视图，恢复单视图
+    this.detView.classList.add('hidden');
+    this.divider.classList.add('hidden');
+    this.hud.classList.add('hidden');
+    this.btn.textContent = '开启识别';
+    this.btn.classList.remove('btn-primary');
+    this.btn.classList.add('btn-ghost');
+    this.setStatus('off');
+    // 重置HUD数据
+    document.getElementById('detectTarget').textContent = '无';
+    document.getElementById('detectConf').textContent = '0%';
+    document.getElementById('detectMotion').textContent = '0%';
+    document.getElementById('dotDetect').className = 'dot dot-off';
+    document.getElementById('detectStatus').textContent = '--';
+  },
+  async loop() {
+    if (!this.active) return;
+    const now = performance.now();
+    if (now - this.lastFrame >= this.interval && this.video.readyState >= 2) {
+      this.lastFrame = now;
+      try {
+        // 执行识别（仅保留动物类别）
+        const preds = await this.model.detect(this.video);
+        const animals = preds.filter(p => this.ANIMALS.includes(p.class));
+        this.draw(animals);
+        this.updateHud(animals);
+      } catch (e) {
+        console.warn('识别异常：', e);
+      }
+    }
+    this.rafId = requestAnimationFrame(() => this.loop());
+  },
+  // 将画布尺寸对齐到视频显示尺寸，并绘制识别框
+  draw(animals) {
+    const vw = this.video.videoWidth, vh = this.video.videoHeight;
+    if (!vw || !vh) return;
+    // 同步画布像素尺寸（仅在尺寸变化时重设，避免每帧清空状态）
+    if (this.canvas.width !== vw || this.canvas.height !== vh) {
+      this.canvas.width = vw;
+      this.canvas.height = vh;
+    }
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, vw, vh);
+
+    animals.forEach((p, idx) => {
+      const [x, y, w, h] = p.bbox;
+      const isAnimal = this.ANIMALS.includes(p.class);
+      // 框颜色：动物用青色，非动物用灰色（这里只处理动物）
+      const color = isAnimal ? '#36CFC9' : '#94A3B8';
+      ctx.lineWidth = Math.max(2, vw / 400);
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+      ctx.strokeRect(x, y, w, h);
+      ctx.shadowBlur = 0;
+
+      // 标签背景
+      const label = `${this.CN[p.class] || p.class} ${(p.score*100).toFixed(0)}%`;
+      ctx.font = `${Math.max(14, vw/60)}px sans-serif`;
+      const tw = ctx.measureText(label).width + 10;
+      const th = Math.max(20, vh/30);
+      ctx.fillStyle = color;
+      ctx.fillRect(x, Math.max(0, y - th), tw, th);
+      ctx.fillStyle = '#0F172A';
+      ctx.fillText(label, x + 5, Math.max(14, y - th/2 + 5));
+    });
+  },
+  // 更新左下角HUD：主目标、置信度、画面亮度、运动量、主色调
+  updateHud(animals) {
+    const dot = document.getElementById('dotDetect');
+    const st = document.getElementById('detectStatus');
+    if (animals.length > 0) {
+      dot.className = 'dot dot-on';
+      st.textContent = '发现 ' + animals.length + ' 个目标';
+      st.className = 'text-cyan';
+      // 取置信度最高的作为主目标
+      const best = animals.reduce((a, b) => a.score > b.score ? a : b);
+      document.getElementById('detectTarget').textContent = this.CN[best.class] || best.class;
+      document.getElementById('detectConf').textContent = (best.score * 100).toFixed(1) + '%';
+    } else {
+      dot.className = 'dot dot-warn';
+      st.textContent = '未发现动物';
+      st.className = 'text-orange';
+      document.getElementById('detectTarget').textContent = '无';
+      document.getElementById('detectConf').textContent = '0%';
+    }
+    // 附加图像统计：亮度/运动/主色（轻量计算，使用小尺寸采样）
+    this.calcImageStats();
+  },
+  _prevGray: null,
+  calcImageStats() {
+    // 将视频绘制到一个极小画布上采样，计算亮度/运动量/主色
+    const SW = 32, SH = 18;
+    if (!this._samp) {
+      this._samp = document.createElement('canvas');
+      this._samp.width = SW; this._samp.height = SH;
+      this._sampCtx = this._samp.getContext('2d', { willReadFrequently: true });
+    }
+    try {
+      this._sampCtx.drawImage(this.video, 0, 0, SW, SH);
+      const img = this._sampCtx.getImageData(0, 0, SW, SH);
+      const d = img.data;
+      let sumLuma = 0, rSum = 0, gSum = 0, bSum = 0;
+      const gray = new Uint8Array(SW * SH);
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const luma = (r*0.299 + g*0.587 + b*0.114) | 0;
+        gray[p] = luma;
+        sumLuma += luma;
+        rSum += r; gSum += g; bSum += b;
+      }
+      const n = SW * SH;
+      const avgLuma = Math.round(sumLuma / n);
+      // 运动量：与上一帧灰度差均值
+      let motion = 0;
+      if (this._prevGray) {
+        let diff = 0;
+        for (let p = 0; p < n; p++) diff += Math.abs(gray[p] - this._prevGray[p]);
+        motion = Math.min(100, Math.round((diff / n) / 2.55));
+      }
+      this._prevGray = gray;
+      // 主色（粗略平均）
+      const r = (rSum/n)|0, g = (gSum/n)|0, b = (bSum/n)|0;
+      const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+      document.getElementById('detectLuma').textContent = avgLuma;
+      document.getElementById('detectMotion').textContent = motion + '%';
+      document.getElementById('detectColor').textContent = hex.toUpperCase();
+      document.getElementById('detectColorSw').style.background = hex;
+    } catch (e) {
+      // 视频未就绪等忽略
+    }
+  },
+  setStatus(s) {
+    const dot = document.getElementById('dotDetect');
+    const txt = document.getElementById('detectStatus');
+    if (s === 'on') {
+      dot.className = 'dot dot-on';
+      txt.textContent = '识别中';
+      txt.className = 'text-cyan';
+      this.btn.disabled = false;
+    } else if (s === 'loading') {
+      dot.className = 'dot dot-warn';
+      txt.textContent = '模型加载中…';
+      txt.className = 'text-orange';
+      this.btn.disabled = false;
+      this.loading = true;
+    } else if (s === 'ready') {
+      this.loading = false;
+      // 模型就绪但未开启识别
+      if (!this.active) {
+        dot.className = 'dot dot-off';
+        txt.textContent = '就绪';
+        txt.className = 'text-mute';
+      }
+    } else if (s === 'error') {
+      this.loading = false;
+      dot.className = 'dot dot-off';
+      txt.textContent = '模型加载失败';
+      txt.className = 'text-red-400';
+    } else {
+      dot.className = 'dot dot-off';
+      txt.textContent = '--';
+      txt.className = 'text-mute';
+    }
+  }
+};
+
+/* ---------- 4. 串口模块 ---------- */
+const Serial = {
+  port: null,
+  reader: null,
+  writer: null,
+  keepReading: false,
+  buf: '',
+  btn: document.getElementById('btnSerial'),
+
+  init() {
+    this.btn.addEventListener('click', () => {
+      if (this.port) this.disconnect();
+      else this.connect();
+    });
+  },
+  async connect() {
+    if (!('serial' in navigator)) {
+      alert('当前浏览器不支持 Web Serial API，请使用 Chrome/Edge 89+');
+      return;
+    }
+    try {
+      this.port = await navigator.serial.requestPort();
+      // 波特率 115200，可按设备调整
+      await this.port.open({ baudRate: 115200 });
+      this.keepReading = true;
+      this.setStatus('on');
+      this.btn.textContent = '断开串口';
+      this.btn.classList.remove('btn-ghost');
+      this.btn.classList.add('btn-danger');
+      this.readLoop();
+    } catch (e) {
+      if (e.name !== 'NotFoundError') {
+        console.error('串口连接失败：', e);
+        alert('串口连接失败：' + e.message);
+      }
+      this.setStatus('off');
+    }
+  },
+  async readLoop() {
+    const decoder = new TextDecoderStream();
+    const readableStreamClosed = this.port.readable.pipeTo(decoder.writable);
+    this.reader = decoder.readable.getReader();
+    try {
+      while (this.keepReading) {
+        const { value, done } = await this.reader.read();
+        if (done) break;
+        if (value) this.onData(value);
+      }
+    } catch (e) {
+      console.warn('串口读取异常：', e);
+    } finally {
+      try { this.reader.releaseLock(); } catch(_) {}
+      try { await this.port.close(); } catch(_) {}
+      this.port = null;
+      this.setStatus('off');
+      this.btn.textContent = '连接串口';
+      this.btn.classList.remove('btn-danger');
+      this.btn.classList.add('btn-ghost');
+    }
+  },
+  onData(chunk) {
+    this.buf += chunk;
+    // 按行解析（假设每帧以 \n 结尾）
+    let idx;
+    while ((idx = this.buf.indexOf('\n')) >= 0) {
+      const line = this.buf.slice(0, idx).trim();
+      this.buf = this.buf.slice(idx + 1);
+      if (line) this.parse(line);
+    }
+  },
+  parse(line) {
+    try {
+      const obj = JSON.parse(line);
+      Dispatcher.handle(obj);
+    } catch (e) {
+      // 非 JSON 数据忽略
+    }
+  },
+  async disconnect() {
+    this.keepReading = false;
+    try { if (this.reader) await this.reader.cancel(); } catch(_) {}
+  },
+  setStatus(s) {
+    const dot = document.getElementById('dotSerial');
+    const txt = document.getElementById('stSerial');
+    if (s === 'on') { dot.className = 'dot dot-on'; txt.textContent = '已连接'; txt.className = 'text-cyan'; }
+    else { dot.className = 'dot dot-off'; txt.textContent = '未连接'; txt.className = 'text-txt'; }
+  }
+};
+
+/* ---------- 4. 数据分发 ---------- */
+const Dispatcher = {
+  lastTs: 0,
+  frameCount: 0,
+  fpsTimer: 0,
+  handle(obj) {
+    const now = performance.now();
+    // 数据接收状态
+    const dot = document.getElementById('dotData');
+    const txt = document.getElementById('stData');
+    dot.className = 'dot dot-on';
+    txt.textContent = '接收中';
+    txt.className = 'text-cyan';
+    clearTimeout(this.fpsTimer);
+    this.fpsTimer = setTimeout(() => {
+      dot.className = 'dot dot-warn';
+      txt.textContent = '无数据';
+      txt.className = 'text-orange';
+    }, 1500);
+    // FPS 计算
+    this.frameCount++;
+    if (now - this.lastTs >= 1000) {
+      document.getElementById('stFps').textContent = this.frameCount;
+      this.frameCount = 0;
+      this.lastTs = now;
+    }
+
+    // 分发各模块
+    if (obj.gyro) UI.updateGyro(obj.gyro);
+    if (obj.accel) UI.updateAccel(obj.accel);
+    if (obj.mag) UI.updateMag(obj.mag);
+    if (obj.pressure !== undefined) UI.updatePressure(obj.pressure);
+    if (obj.altitude !== undefined) UI.updateAltitude(obj.altitude);
+    if (obj.rc_channel) UI.updateRC(obj.rc_channel);
+    if (obj.motor_angle) UI.updateMotor(obj.motor_angle);
+    if (obj.gps) UI.updateGPS(obj.gps);
+  }
+};
+
+/* ---------- 5. UI 更新 ---------- */
+const UI = {
+  alarmGyro: 1500,   // 陀螺仪告警阈值 °/s
+  alarmAcc: 60,      // 加速度告警阈值 m/s²
+  altBase: null,     // 高度基准
+
+  updateGyro(g) {
+    const els = ['gx','gy','gz'].map(id => document.getElementById(id));
+    els[0].textContent = (g.x||0).toFixed(2);
+    els[1].textContent = (g.y||0).toFixed(2);
+    els[2].textContent = (g.z||0).toFixed(2);
+    // 告警
+    els.forEach((el, i) => {
+      const v = [g.x,g.y,g.z][i] || 0;
+      el.classList.toggle('alarm', Math.abs(v) > this.alarmGyro);
+    });
+    Charts.push('gyro', g);
+  },
+  updateAccel(a) {
+    const els = ['ax','ay','az'].map(id => document.getElementById(id));
+    els[0].textContent = (a.x||0).toFixed(2);
+    els[1].textContent = (a.y||0).toFixed(2);
+    els[2].textContent = (a.z||0).toFixed(2);
+    els.forEach((el, i) => {
+      const v = [a.x,a.y,a.z][i] || 0;
+      el.classList.toggle('alarm', Math.abs(v) > this.alarmAcc);
+    });
+    Charts.push('acc', a);
+  },
+  updateMag(m) {
+    document.getElementById('mx').textContent = (m.x||0).toFixed(2);
+    document.getElementById('my').textContent = (m.y||0).toFixed(2);
+    document.getElementById('mz').textContent = (m.z||0).toFixed(2);
+    Charts.push('mag', m);
+  },
+  updatePressure(p) {
+    document.getElementById('pVal').textContent = (p||0).toFixed(2);
+    // 气压过低告警
+    const el = document.getElementById('pVal');
+    el.classList.toggle('alarm', p < 800 || p > 1100);
+  },
+  updateAltitude(a) {
+    if (this.altBase === null) this.altBase = a;
+    document.getElementById('aVal').textContent = (a||0).toFixed(2);
+    document.getElementById('altDelta').textContent = `Δ ${(a - this.altBase).toFixed(2)} m`;
+    Charts.push('alt', a);
+  },
+  updateRC(rc) {
+    const list = document.getElementById('rcList');
+    const CH_COUNT = 11;
+    if (list.children.length === 0) {
+      // 初始化11路
+      for (let i = 0; i < CH_COUNT; i++) {
+        const item = document.createElement('div');
+        item.className = 'rc-item flex flex-col justify-center min-h-0';
+        item.innerHTML = `
+          <div class="flex items-center justify-between text-[11px] mb-0.5">
+            <span class="text-mute">CH${i+1}</span>
+            <span class="big-num text-txt" id="rc${i}">0</span>
+          </div>
+          <div class="ch-bar" style="height:6px;"><i id="rcBar${i}" style="width:0%;background:linear-gradient(90deg,#165DFF,#36CFC9);"></i></div>
+        `;
+        list.appendChild(item);
+      }
+    }
+    for (let i = 0; i < CH_COUNT; i++) {
+      const v = rc[i] !== undefined ? rc[i] : 0;
+      const el = document.getElementById('rc' + i);
+      el.textContent = v;
+      // 范围 1000~2000
+      const pct = Math.max(0, Math.min(100, ((v - 1000) / 1000) * 100));
+      document.getElementById('rcBar' + i).style.width = pct + '%';
+      // 异常告警
+      el.classList.toggle('alarm', v < 1000 || v > 2000);
+    }
+  },
+  updateMotor(ma) {
+    const list = document.getElementById('motorList');
+    const MOTOR_COUNT = 2;
+    if (list.children.length === 0) {
+      const labels = ['左电机 L', '右电机 R'];
+      for (let i = 0; i < MOTOR_COUNT; i++) {
+        const item = document.createElement('div');
+        item.className = 'bg-panel2/70 rounded-lg p-2 border border-slate-800 text-center flex flex-col items-center justify-center min-h-0';
+        item.innerHTML = `
+          <div class="text-[11px] text-mute mb-1">${labels[i]}</div>
+          <svg viewBox="0 0 100 100" width="96" height="96" class="block">
+            <circle cx="50" cy="50" r="44" fill="none" stroke="#1E293B" stroke-width="2"/>
+            <circle cx="50" cy="50" r="44" fill="none" stroke="#165DFF" stroke-width="2" stroke-dasharray="2 4" opacity="0.5"/>
+            <!-- 刻度 -->
+            ${[0,90,180,270].map(d=>{
+              const r=(d-90)*Math.PI/180;
+              const x1=50+38*Math.cos(r), y1=50+38*Math.sin(r);
+              const x2=50+44*Math.cos(r), y2=50+44*Math.sin(r);
+              return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#36CFC9" stroke-width="1.2"/>`;
+            }).join('')}
+            <text x="50" y="10" fill="#64748B" font-size="7" text-anchor="middle">0</text>
+            <text x="92" y="53" fill="#64748B" font-size="7" text-anchor="middle">90</text>
+            <text x="50" y="96" fill="#64748B" font-size="7" text-anchor="middle">180</text>
+            <text x="8" y="53" fill="#64748B" font-size="7" text-anchor="middle">270</text>
+            <!-- 指针 -->
+            <g class="needle" id="needle${i}">
+              <line x1="50" y1="50" x2="50" y2="14" stroke="#FF7D00" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="50" cy="50" r="3" fill="#FF7D00"/>
+            </g>
+          </svg>
+          <div class="mt-1 text-sm big-num text-orange" id="ma${i}">0°</div>
+        `;
+        list.appendChild(item);
+      }
+    }
+    for (let i = 0; i < MOTOR_COUNT; i++) {
+      const v = ma[i] !== undefined ? ma[i] : 0;
+      document.getElementById('ma' + i).textContent = (v||0).toFixed(1) + '°';
+      const needle = document.getElementById('needle' + i);
+      needle.style.transform = `rotate(${v||0}deg)`;
+    }
+  },
+  updateGPS(g) {
+    document.getElementById('gpsLon').textContent = g.lon !== undefined ? g.lon.toFixed(6) : '--';
+    document.getElementById('gpsLat').textContent = g.lat !== undefined ? g.lat.toFixed(6) : '--';
+    document.getElementById('gpsSpd').textContent = (g.speed||0).toFixed(2);
+    document.getElementById('gpsSat').textContent = g.sat_num !== undefined ? g.sat_num : 0;
+    if (g.timestamp) {
+      const d = new Date(g.timestamp * 1000);
+      document.getElementById('gpsTime').textContent = d.toLocaleString();
+    }
+    const status = document.getElementById('gpsStatus');
+    const sats = g.sat_num || 0;
+    if (sats >= 4) { status.textContent = '已定位'; status.className = 'text-[11px] text-cyan'; }
+    else if (sats > 0) { status.textContent = '信号弱'; status.className = 'text-[11px] text-orange'; }
+    else { status.textContent = '未定位'; status.className = 'text-[11px] text-mute'; }
+  }
+};
+
+/* ---------- 6. 图表 ---------- */
+const Charts = {
+  maxPoints: 60,
+  data: {
+    gyro: { x: [], y: [], z: [] },
+    acc:  { x: [], y: [], z: [] },
+    mag:  { x: [], y: [], z: [] },
+    alt:  { a: [] },
+  },
+  charts: {},
+  init() {
+    const baseOpt = {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          grid: { color: 'rgba(148,163,184,0.08)' },
+          ticks: { color: '#64748B', font: { size: 9 } },
+        }
+      },
+      elements: { point: { radius: 0 }, line: { borderWidth: 1.5, tension: 0.3 } },
+    };
+    const mkLine = (label, color) => ({ label, data: [], borderColor: color, backgroundColor: color + '22', fill: false });
+
+    this.charts.gyro = new Chart(document.getElementById('chartGyro'), {
+      type: 'line',
+      data: { labels: [], datasets: [mkLine('X','#36CFC9'), mkLine('Y','#165DFF'), mkLine('Z','#A855F7')] },
+      options: baseOpt
+    });
+    this.charts.acc = new Chart(document.getElementById('chartAcc'), {
+      type: 'line',
+      data: { labels: [], datasets: [mkLine('X','#FF7D00'), mkLine('Y','#FFD43B'), mkLine('Z','#FB7185')] },
+      options: baseOpt
+    });
+    this.charts.mag = new Chart(document.getElementById('chartMag'), {
+      type: 'line',
+      data: { labels: [], datasets: [mkLine('X','#A855F7'), mkLine('Y','#C084FC'), mkLine('Z','#E879F9')] },
+      options: baseOpt
+    });
+    this.charts.alt = new Chart(document.getElementById('chartAlt'), {
+      type: 'line',
+      data: { labels: [], datasets: [{
+        label: 'Altitude', data: [], borderColor: '#36CFC9',
+        backgroundColor: 'rgba(54,207,201,0.18)', fill: true, borderWidth: 1.8, tension: 0.3, pointRadius: 0
+      }]},
+      options: baseOpt
+    });
+  },
+  push(type, val) {
+    const labels = this.charts[type].data.labels;
+    const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    labels.push(t);
+    if (labels.length > this.maxPoints) labels.shift();
+
+    if (type === 'alt') {
+      const d = this.charts.alt.data.datasets[0].data;
+      d.push(val);
+      if (d.length > this.maxPoints) d.shift();
+    } else {
+      // 三轴
+      ['x','y','z'].forEach((k, i) => {
+        const d = this.charts[type].data.datasets[i].data;
+        d.push(val[k] || 0);
+        if (d.length > this.maxPoints) d.shift();
+      });
+    }
+    this.charts[type].update('none');
+  }
+};
+
+/* ---------- 7. 模拟数据（无设备时演示） ---------- */
+const Mock = {
+  timer: null,
+  btn: document.getElementById('btnMock'),
+  active: false,
+  init() {
+    this.btn.addEventListener('click', () => {
+      if (this.active) this.stop();
+      else this.start();
+    });
+  },
+  start() {
+    this.active = true;
+    this.btn.textContent = '停止模拟';
+    this.btn.classList.remove('btn-ghost');
+    this.btn.classList.add('btn-danger');
+    // 初始基准值
+    let t = 0;
+    let altBase = 100;
+    let lon = 116.397428, lat = 39.90923;
+    this.timer = setInterval(() => {
+      t += 0.05;
+      const obj = {
+        gyro: {
+          x: Math.sin(t*1.3)*120 + (Math.random()-0.5)*20,
+          y: Math.cos(t*1.1)*90  + (Math.random()-0.5)*20,
+          z: Math.sin(t*0.7)*60  + (Math.random()-0.5)*10,
+        },
+        accel: {
+          x: Math.sin(t*2.0)*3 + (Math.random()-0.5)*0.5,
+          y: Math.cos(t*1.7)*2 + (Math.random()-0.5)*0.5,
+          z: 9.8 + Math.sin(t*0.5)*0.5 + (Math.random()-0.5)*0.3,
+        },
+        mag: {
+          x: 25 + Math.sin(t*0.4)*5,
+          y: -10 + Math.cos(t*0.5)*4,
+          z: 40 + Math.sin(t*0.3)*3,
+        },
+        pressure: 1013.25 + Math.sin(t*0.2)*1.5,
+        altitude: altBase + Math.sin(t*0.3)*2 + (Math.random()-0.5)*0.2,
+        rc_channel: [
+          1500 + Math.sin(t)*300,
+          1500 + Math.cos(t*1.2)*350,
+          1500 + Math.sin(t*0.8)*200,
+          1500 + Math.cos(t*0.6)*250,
+          1500 + Math.sin(t*1.5)*400,
+          1500 + Math.cos(t*0.9)*200,
+          1500 + Math.sin(t*1.1)*180,
+          1500 + Math.cos(t*0.7)*220,
+          1500 + Math.sin(t*1.3)*280,
+          1500 + Math.cos(t*0.5)*150,
+          1500 + Math.sin(t*0.95)*320,
+        ],
+        motor_angle: [
+          (t*120) % 360,
+          (t*90) % 360,
+        ],
+        gps: {
+          lon: lon + Math.sin(t*0.1)*0.0005,
+          lat: lat + Math.cos(t*0.1)*0.0005,
+          speed: 3 + Math.abs(Math.sin(t))*2,
+          sat_num: 8 + Math.floor(Math.sin(t)*2),
+          timestamp: Math.floor(Date.now()/1000),
+        }
+      };
+      Dispatcher.handle(obj);
+    }, 100);
+  },
+  stop() {
+    this.active = false;
+    this.btn.textContent = '模拟数据';
+    this.btn.classList.remove('btn-danger');
+    this.btn.classList.add('btn-ghost');
+    if (this.timer) clearInterval(this.timer);
+  }
+};
+
+/* ---------- 启动 ---------- */
+window.addEventListener('DOMContentLoaded', () => {
+  EnvCheck.init();
+  Camera.init();
+  Serial.init();
+  Mock.init();
+  Detector.init();   // 后台预加载 COCO-SSD 动物识别模型
+  // 等待布局完成后再初始化图表，避免初始尺寸为 0
+  requestAnimationFrame(() => requestAnimationFrame(Charts.init.bind(Charts)));
+});
+</script>
+</body>
+</html>
