@@ -9,9 +9,10 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<!-- TensorFlow.js + COCO-SSD（用于动物识别） -->
+<!-- TensorFlow.js + COCO-SSD（多目标检测） + MobileNet（细粒度分类） -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
 
 <script>
   // Tailwind 自定义主题配置：深色科技风
@@ -244,9 +245,15 @@
         <!-- 右：识别图像 -->
         <div class="relative flex-1 overflow-hidden hidden" id="detView">
           <video id="video2" autoplay playsinline muted class="w-full h-full object-cover"></video>
-          <!-- 识别叠加画布 -->
+          <!-- 检测框叠加画布 -->
           <canvas id="detectCanvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
-          <div class="absolute top-2 left-2 text-[11px] text-orange/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur border border-orange/30">CAM · 识别</div>
+          <!-- 顶部统计 -->
+          <div class="absolute top-2 left-2 right-2 flex items-center justify-between gap-2 z-10">
+            <div class="text-[11px] text-orange/90 bg-black/55 px-2 py-0.5 rounded backdrop-blur border border-orange/30">CAM · 识别</div>
+            <div id="mainResult" class="text-[11px] text-cyan bg-black/55 px-2 py-0.5 rounded backdrop-blur border border-cyan/30 big-num">--</div>
+          </div>
+          <!-- 底部检测到的动物列表 -->
+          <div id="topList" class="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur rounded px-2 py-1.5 border border-primary/30 z-10 space-y-1 max-h-[45%] overflow-auto"></div>
         </div>
         <!-- 占位/异常提示 -->
         <div id="camOverlay" class="absolute inset-0 flex flex-col items-center justify-center text-center text-mute z-10">
@@ -516,14 +523,15 @@ const Camera = {
   }
 };
 
-/* ---------- 3. 动物识别模块（COCO-SSD） ---------- */
+/* ---------- 3. 动物识别模块（COCO-SSD 多目标检测 + MobileNet 细粒度分类） ---------- */
 const Detector = {
   active: false,           // 是否正在识别
-  model: null,             // 加载后的 COCO-SSD 模型
+  detectModel: null,       // COCO-SSD 检测模型
+  classifyModel: null,     // MobileNet 分类模型
   loading: false,          // 模型加载中
   rafId: null,             // requestAnimationFrame 句柄
   lastFrame: 0,            // 上一帧时间，用于限频
-  interval: 120,           // 检测间隔(ms)，避免占用过高CPU
+  interval: 200,           // 检测间隔(ms)，多目标检测+分类较重，降低频率
   video: document.getElementById('video2'),  // 识别视图的视频源
   canvas: document.getElementById('detectCanvas'),
   ctx: null,
@@ -531,10 +539,15 @@ const Detector = {
   btn: document.getElementById('btnDetect'),
   detView: document.getElementById('detView'),
   divider: document.getElementById('viewDivider'),
+  topList: document.getElementById('topList'),
+  mainResult: document.getElementById('mainResult'),
+  // 用于裁剪检测框做细粒度分类的离屏画布
+  cropCanvas: null,
+  cropCtx: null,
 
-  // COCO-SSD 中包含的动物类别
+  // COCO-SSD 中的动物类别
   ANIMALS: ['bird','cat','dog','horse','sheep','cow','elephant','bear','zebra','giraffe'],
-  // 中文映射
+  // COCO-SSD 类别中文映射
   CN: {
     bird:'鸟类', cat:'猫', dog:'狗', horse:'马', sheep:'羊',
     cow:'牛', elephant:'大象', bear:'熊', zebra:'斑马', giraffe:'长颈鹿'
@@ -542,10 +555,19 @@ const Detector = {
 
   async init() {
     this.ctx = this.canvas.getContext('2d');
-    // 预加载模型（在后台进行，不阻塞页面）
+    this.cropCanvas = document.createElement('canvas');
+    this.cropCanvas.width = 224;
+    this.cropCanvas.height = 224;
+    this.cropCtx = this.cropCanvas.getContext('2d', { willReadFrequently: true });
+    // 后台并行加载两个模型
     try {
       this.setStatus('loading');
-      this.model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      const [det, cls] = await Promise.all([
+        cocoSsd.load({ base: 'lite_mobilenet_v2' }),
+        mobilenet.load({ version: 2, alpha: 1.0 })
+      ]);
+      this.detectModel = det;
+      this.classifyModel = cls;
       this.setStatus('ready');
     } catch (e) {
       console.error('识别模型加载失败：', e);
@@ -553,16 +575,14 @@ const Detector = {
     }
   },
   async start() {
-    if (!this.model) {
-      // 模型尚未就绪，先等待加载
+    if (!this.detectModel || !this.classifyModel) {
       if (!this.loading) this.init();
       this.setStatus('loading');
       const wait = setInterval(() => {
-        if (this.model) {
+        if (this.detectModel && this.classifyModel) {
           clearInterval(wait);
           this._run();
-        } else if (!this.loading && !this.model) {
-          // 加载失败则退出
+        } else if (!this.loading && !this.detectModel) {
           clearInterval(wait);
         }
       }, 300);
@@ -572,7 +592,6 @@ const Detector = {
   },
   _run() {
     this.active = true;
-    // 显示右侧识别视图，形成左右分屏
     this.detView.classList.remove('hidden');
     this.divider.classList.remove('hidden');
     this.hud.classList.remove('hidden');
@@ -586,9 +605,9 @@ const Detector = {
     this.active = false;
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = null;
-    // 清空叠加画布
     if (this.canvas.width > 0) this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    // 隐藏右侧识别视图，恢复单视图
+    this.topList.innerHTML = '';
+    this.mainResult.textContent = '--';
     this.detView.classList.add('hidden');
     this.divider.classList.add('hidden');
     this.hud.classList.add('hidden');
@@ -596,7 +615,6 @@ const Detector = {
     this.btn.classList.remove('btn-primary');
     this.btn.classList.add('btn-ghost');
     this.setStatus('off');
-    // 重置HUD数据
     document.getElementById('detectTarget').textContent = '无';
     document.getElementById('detectConf').textContent = '0%';
     document.getElementById('detectMotion').textContent = '0%';
@@ -609,22 +627,50 @@ const Detector = {
     if (now - this.lastFrame >= this.interval && this.video.readyState >= 2) {
       this.lastFrame = now;
       try {
-        // 执行识别（仅保留动物类别）
-        const preds = await this.model.detect(this.video);
+        // 第一步：COCO-SSD 多目标检测
+        const preds = await this.detectModel.detect(this.video);
+        // 仅保留动物类别
         const animals = preds.filter(p => this.ANIMALS.includes(p.class));
-        this.draw(animals);
-        this.updateHud(animals);
+        // 第二步：对每个动物框用 MobileNet 做细粒度分类
+        const results = [];
+        for (const p of animals) {
+          const fine = await this.classifyCrop(p.bbox);
+          results.push({
+            ...p,
+            fineLabel: fine.label,
+            fineScore: fine.score
+          });
+        }
+        this.draw(results);
+        this.render(results);
+        this.updateHud(results);
       } catch (e) {
         console.warn('识别异常：', e);
       }
     }
     this.rafId = requestAnimationFrame(() => this.loop());
   },
-  // 将画布尺寸对齐到视频显示尺寸，并绘制识别框
-  draw(animals) {
+  // 裁剪检测框区域并用 MobileNet 分类，返回细粒度标签
+  async classifyCrop(bbox) {
+    const [x, y, w, h] = bbox;
+    const vw = this.video.videoWidth, vh = this.video.videoHeight;
+    if (!vw || !vh || w < 10 || h < 10) return { label: '', score: 0 };
+    try {
+      // 将检测框区域绘制到 224x224 离屏画布（MobileNet 输入尺寸）
+      this.cropCtx.drawImage(this.video, x, y, w, h, 0, 0, 224, 224);
+      const preds = await this.classifyModel.classify(this.cropCanvas, 3);
+      if (preds && preds.length > 0) {
+        return { label: preds[0].className, score: preds[0].probability };
+      }
+    } catch (e) {
+      // 裁剪分类失败忽略
+    }
+    return { label: '', score: 0 };
+  },
+  // 绘制多目标检测框
+  draw(results) {
     const vw = this.video.videoWidth, vh = this.video.videoHeight;
     if (!vw || !vh) return;
-    // 同步画布像素尺寸（仅在尺寸变化时重设，避免每帧清空状态）
     if (this.canvas.width !== vw || this.canvas.height !== vh) {
       this.canvas.width = vw;
       this.canvas.height = vh;
@@ -632,11 +678,11 @@ const Detector = {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, vw, vh);
 
-    animals.forEach((p, idx) => {
+    results.forEach((p, idx) => {
       const [x, y, w, h] = p.bbox;
-      const isAnimal = this.ANIMALS.includes(p.class);
-      // 框颜色：动物用青色，非动物用灰色（这里只处理动物）
-      const color = isAnimal ? '#36CFC9' : '#94A3B8';
+      // 不同目标用不同颜色：青/橙/紫循环
+      const colors = ['#36CFC9', '#FF7D00', '#A855F7', '#22C55E', '#FACC15'];
+      const color = colors[idx % colors.length];
       ctx.lineWidth = Math.max(2, vw / 400);
       ctx.strokeStyle = color;
       ctx.shadowColor = color;
@@ -644,8 +690,11 @@ const Detector = {
       ctx.strokeRect(x, y, w, h);
       ctx.shadowBlur = 0;
 
-      // 标签背景
-      const label = `${this.CN[p.class] || p.class} ${(p.score*100).toFixed(0)}%`;
+      // 标签：细粒度分类结果优先，否则用 COCO 大类
+      const cn = this.getCn(p.class);
+      const conf = (p.score * 100).toFixed(0);
+      const fine = p.fineLabel ? ` · ${p.fineLabel.split(',')[0]}` : '';
+      const label = `${cn}${fine} ${conf}%`;
       ctx.font = `${Math.max(14, vw/60)}px sans-serif`;
       const tw = ctx.measureText(label).width + 10;
       const th = Math.max(20, vh/30);
@@ -655,17 +704,49 @@ const Detector = {
       ctx.fillText(label, x + 5, Math.max(14, y - th/2 + 5));
     });
   },
-  // 更新左下角HUD：主目标、置信度、画面亮度、运动量、主色调
-  updateHud(animals) {
+  // 获取大类中文名
+  getCn(cls) { return this.CN[cls] || cls; },
+  // 渲染右侧底部动物列表
+  render(results) {
+    if (!results || results.length === 0) {
+      this.mainResult.innerHTML = '<span class="text-mute">未发现动物</span>';
+      this.topList.innerHTML = '<div class="text-[11px] text-mute text-center py-1">未识别到动物目标</div>';
+      return;
+    }
+    // 顶部统计
+    this.mainResult.innerHTML = `<span class="text-orange">发现 ${results.length} 个目标</span>`;
+    // 底部列表
+    const colors = ['#36CFC9', '#FF7D00', '#A855F7', '#22C55E', '#FACC15'];
+    const html = results.map((p, i) => {
+      const cn = this.getCn(p.class);
+      const conf = (p.score * 100).toFixed(1);
+      const fine = p.fineLabel ? p.fineLabel.split(',')[0] : '';
+      const fineConf = p.fineScore ? (p.fineScore * 100).toFixed(1) + '%' : '';
+      const color = colors[i % colors.length];
+      return `
+        <div class="text-[11px]">
+          <div class="flex items-center justify-between mb-0.5">
+            <span style="color:${color}" class="font-semibold">${i+1}. ${cn}${fine ? ' · <span class="text-txt">' + fine + '</span>' : ''}</span>
+            <span class="text-mute big-num">${conf}%</span>
+          </div>
+          <div class="ch-bar" style="height:5px;"><i style="width:${conf}%;background:${color};"></i></div>
+        </div>
+      `;
+    }).join('');
+    this.topList.innerHTML = html;
+  },
+  // 更新底部全局HUD
+  updateHud(results) {
     const dot = document.getElementById('dotDetect');
     const st = document.getElementById('detectStatus');
-    if (animals.length > 0) {
+    if (results && results.length > 0) {
       dot.className = 'dot dot-on';
-      st.textContent = '发现 ' + animals.length + ' 个目标';
+      st.textContent = `识别 ${results.length} 个目标`;
       st.className = 'text-cyan';
       // 取置信度最高的作为主目标
-      const best = animals.reduce((a, b) => a.score > b.score ? a : b);
-      document.getElementById('detectTarget').textContent = this.CN[best.class] || best.class;
+      const best = results.reduce((a, b) => a.score > b.score ? a : b);
+      const label = best.fineLabel ? this.getCn(best.class) + ' · ' + best.fineLabel.split(',')[0] : this.getCn(best.class);
+      document.getElementById('detectTarget').textContent = label;
       document.getElementById('detectConf').textContent = (best.score * 100).toFixed(1) + '%';
     } else {
       dot.className = 'dot dot-warn';
@@ -674,12 +755,10 @@ const Detector = {
       document.getElementById('detectTarget').textContent = '无';
       document.getElementById('detectConf').textContent = '0%';
     }
-    // 附加图像统计：亮度/运动/主色（轻量计算，使用小尺寸采样）
     this.calcImageStats();
   },
   _prevGray: null,
   calcImageStats() {
-    // 将视频绘制到一个极小画布上采样，计算亮度/运动量/主色
     const SW = 32, SH = 18;
     if (!this._samp) {
       this._samp = document.createElement('canvas');
@@ -701,7 +780,6 @@ const Detector = {
       }
       const n = SW * SH;
       const avgLuma = Math.round(sumLuma / n);
-      // 运动量：与上一帧灰度差均值
       let motion = 0;
       if (this._prevGray) {
         let diff = 0;
@@ -709,16 +787,13 @@ const Detector = {
         motion = Math.min(100, Math.round((diff / n) / 2.55));
       }
       this._prevGray = gray;
-      // 主色（粗略平均）
       const r = (rSum/n)|0, g = (gSum/n)|0, b = (bSum/n)|0;
       const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
       document.getElementById('detectLuma').textContent = avgLuma;
       document.getElementById('detectMotion').textContent = motion + '%';
       document.getElementById('detectColor').textContent = hex.toUpperCase();
       document.getElementById('detectColorSw').style.background = hex;
-    } catch (e) {
-      // 视频未就绪等忽略
-    }
+    } catch (e) {}
   },
   setStatus(s) {
     const dot = document.getElementById('dotDetect');
@@ -736,7 +811,6 @@ const Detector = {
       this.loading = true;
     } else if (s === 'ready') {
       this.loading = false;
-      // 模型就绪但未开启识别
       if (!this.active) {
         dot.className = 'dot dot-off';
         txt.textContent = '就绪';
