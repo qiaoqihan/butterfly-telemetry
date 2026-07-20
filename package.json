@@ -1,0 +1,16 @@
+{
+  "name": "butterfly-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "仿生蝴蝶飞行器综合监测仪表盘",
+  "scripts": {
+    "start": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "openai": "^4.104.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
