@@ -369,18 +369,45 @@
           <!-- 左：原始图像 -->
           <div class="relative flex-1 overflow-hidden" id="origView">
             <video id="video" autoplay playsinline muted class="w-full h-full object-fill"></video>
+            <!-- 左上：视图标签 -->
             <div
-              class="absolute top-2 left-2 text-[11px] text-cyan/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur border border-cyan/20">
+              class="absolute top-2 left-2 text-[11px] text-cyan/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur border border-cyan/20 z-10">
               CAM · 原始</div>
+            <!-- 右上：时间HUD（仅左侧） -->
+            <div
+              class="absolute top-2 right-2 text-[11px] text-cyan/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur z-10"
+              id="camTime">--:--:--</div>
             <!-- 占位/异常提示（仅覆盖左侧原始视图） -->
             <div id="camOverlay"
-              class="absolute inset-0 flex flex-col items-center justify-center text-center text-mute z-10">
+              class="absolute inset-0 flex flex-col items-center justify-center text-center text-mute z-20">
               <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.3">
                 <rect x="3" y="6" width="14" height="12" rx="2" />
                 <path d="M17 10l4-2v8l-4-2z" />
               </svg>
               <p class="mt-3 text-sm">点击右上角"开启摄像头"启动视频流</p>
               <p class="text-[11px] text-mute mt-1">需在 localhost 或 HTTPS 环境运行，并授权摄像头权限</p>
+            </div>
+            <!-- 底部：识别状态HUD（仅左侧，显示画面统计与识别概览） -->
+            <div id="detectHud" class="absolute bottom-2 left-2 right-2 hidden z-10">
+              <div
+                class="flex items-center justify-between gap-2 text-[11px] bg-black/60 backdrop-blur rounded px-2 py-1 border border-primary/30 flex-wrap">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="flex items-center gap-1.5">
+                    <span id="dotDetect" class="dot dot-off"></span>
+                    <span class="text-mute">识别：</span>
+                    <span id="detectStatus" class="text-txt">--</span>
+                  </span>
+                  <span class="text-mute">目标：<span id="detectTarget" class="text-orange big-num">无</span></span>
+                  <span class="text-mute">置信度：<span id="detectConf" class="text-cyan big-num">0%</span></span>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-mute">亮度：<span id="detectLuma" class="text-cyan big-num">0</span></span>
+                  <span class="text-mute">运动：<span id="detectMotion" class="text-orange big-num">0%</span></span>
+                  <span class="text-mute">主色：<span id="detectColorSw"
+                      class="inline-block w-3 h-3 rounded-sm align-middle border border-white/30"
+                      style="background:#666"></span><span id="detectColor" class="text-txt ml-1">#666666</span></span>
+                </div>
+              </div>
             </div>
           </div>
           <!-- 分割线 -->
@@ -399,7 +426,7 @@
               </svg>
               <p class="mt-2 text-[12px]">点击"开启识别"启动目标检测</p>
             </div>
-            <!-- 顶部统计 -->
+            <!-- 顶部统计：左标签 + 右主结果 -->
             <div class="absolute top-2 left-2 right-2 flex items-center justify-between gap-2 z-10">
               <div
                 class="text-[11px] text-orange/90 bg-black/55 px-2 py-0.5 rounded backdrop-blur border border-orange/30">
@@ -408,35 +435,9 @@
                 class="text-[11px] text-cyan bg-black/55 px-2 py-0.5 rounded backdrop-blur border border-cyan/30 big-num">
                 --</div>
             </div>
-            <!-- 底部检测到的动物列表 -->
+            <!-- 底部检测到的动物列表（仅右侧） -->
             <div id="topList"
               class="absolute bottom-2 left-2 right-2 bg-black/60 backdrop-blur rounded px-2 py-1.5 border border-primary/30 z-10 space-y-1 max-h-[45%] overflow-auto hidden">
-            </div>
-          </div>
-          <!-- 时间HUD -->
-          <div
-            class="absolute top-2 right-2 text-[11px] text-cyan/90 bg-black/50 px-2 py-0.5 rounded backdrop-blur z-10"
-            id="camTime">--:--:--</div>
-          <!-- 识别结果HUD（底部） -->
-          <div id="detectHud" class="absolute bottom-2 left-2 right-2 hidden z-10">
-            <div
-              class="flex items-center justify-between gap-3 text-[11px] bg-black/60 backdrop-blur rounded px-2 py-1.5 border border-primary/30">
-              <div class="flex items-center gap-3 flex-wrap">
-                <span class="flex items-center gap-1.5">
-                  <span id="dotDetect" class="dot dot-off"></span>
-                  <span class="text-mute">识别：</span>
-                  <span id="detectStatus" class="text-txt">--</span>
-                </span>
-                <span class="text-mute">目标：<span id="detectTarget" class="text-orange big-num">无</span></span>
-                <span class="text-mute">置信度：<span id="detectConf" class="text-cyan big-num">0%</span></span>
-              </div>
-              <div class="flex items-center gap-3">
-                <span class="text-mute">亮度：<span id="detectLuma" class="text-cyan big-num">0</span></span>
-                <span class="text-mute">运动：<span id="detectMotion" class="text-orange big-num">0%</span></span>
-                <span class="text-mute">主色：<span id="detectColorSw"
-                    class="inline-block w-3 h-3 rounded-sm align-middle border border-white/30"
-                    style="background:#666"></span><span id="detectColor" class="text-txt ml-1">#666666</span></span>
-              </div>
             </div>
           </div>
         </div>
@@ -705,10 +706,159 @@
 
       // COCO-SSD 中的动物类别
       ANIMALS: ['bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'],
-      // COCO-SSD 类别中文映射
+      // COCO-SSD 类别中文映射（仅作为大类参考）
       CN: {
         bird: '鸟类', cat: '猫', dog: '狗', horse: '马', sheep: '羊',
         cow: '牛', elephant: '大象', bear: '熊', zebra: '斑马', giraffe: '长颈鹿'
+      },
+      // MobileNet 细粒度标签（英文）→ 中文映射
+      // 以 MobileNet ImageNet 类名为准，取逗号前主名
+      FINE_CN: {
+        // 犬类
+        'golden retriever': '金毛寻回犬', 'Labrador retriever': '拉布拉多', 'German shepherd': '德国牧羊犬',
+        'Siberian husky': '西伯利亚雪橇犬', 'samoyed': '萨摩耶', 'pomeranian': '博美犬',
+        'chow': '松狮犬', 'keeshond': '荷兰毛狮犬', 'Dalmatian': '斑点狗', 'basenji': '巴仙吉犬',
+        'pug': '哈巴狗', 'Leonberg': '雷恩贝格犬', 'Newfoundland': '纽芬兰犬',
+        'Great Pyrenees': '大白熊犬', 'malinois': '马里努阿犬', 'Bernese mountain dog': '伯尔尼山犬',
+        'Australian shepherd': '澳大利亚牧羊犬', 'Border collie': '边境牧羊犬',
+        'collie': '柯利牧羊犬', 'Shetland sheepdog': '设得兰牧羊犬',
+        'Doberman': '杜宾犬', 'miniature pinscher': '迷你杜宾犬', 'Rottweiler': '罗威纳犬',
+        'Gordon setter': '戈登塞特犬', 'Irish setter': '爱尔兰塞特犬',
+        'English setter': '英国塞特犬', 'Blenheim spaniel': '布莱尼姆猎犬',
+        'clumber spaniel': '克伦伯猎犬', 'cocker spaniel': '可卡猎犬',
+        'Welsh springer spaniel': '威尔士激飞猎犬', 'Sussex spaniel': '苏塞克斯猎犬',
+        'Irish water spaniel': '爱尔兰水猎犬', 'curly-coated retriever': '卷毛寻回犬',
+        'flat-coated retriever': '平毛寻回犬', 'Chesapeake Bay retriever': '切萨皮克湾寻回犬',
+        'vizsla': '维兹拉犬', 'Weimaraner': '魏玛犬', 'Briard': '布里亚德犬',
+        'Bouvier des Flandres': '法兰德斯畜牧犬', 'boxer': '拳师犬',
+        'Staffordshire bullterrier': '斯塔福德斗牛梗', 'American Staffordshire terrier': '美国斯塔福德梗',
+        'Bedlington terrier': '贝德灵顿梗', 'Border terrier': '边境梗',
+        'Kerry blue terrier': '凯利蓝梗', 'Irish terrier': '爱尔兰梗',
+        'Lakeland terrier': '湖畔梗', 'Welsh terrier': '威尔士梗',
+        'Airedale': '万能梗', 'cairn': '凯恩梗', 'Australian terrier': '澳大利亚梗',
+        'Yorkshire terrier': '约克夏梗', 'Scotch terrier': '苏格兰梗',
+        'silky terrier': '丝毛梗', 'soft-coated wheaten terrier': '软毛麦色梗',
+        'West Highland white terrier': '西高地白梗', ' Norwich terrier': '诺里奇梗',
+        'miniature schnauzer': '迷你雪纳瑞', 'standard schnauzer': '标准雪纳瑞',
+        'giant schnauzer': '巨型雪纳瑞', 'affenpinscher': '猴面犬',
+        'wire-haired fox terrier': '刚毛猎狐梗', 'Norfolk terrier': '诺福克梗',
+        'Toy terrier': '玩具梗', 'Kuvasz': '库瓦兹犬', 'schipperke': '舒柏奇犬',
+        'groenendael': '比利时牧羊犬', 'Mexican hairless': '墨西哥无毛犬',
+        'EntleBucher': '恩特布赫犬', 'Greater Swiss Mountain dog': '大瑞士山犬',
+        'Appenzeller': '阿彭策尔山犬', 'Saluki': '萨路基猎犬', 'Scottish deerhound': '苏格兰猎鹿犬',
+        'Whippet': '惠比特犬', 'Afghan hound': '阿富汗猎犬', 'bloodhound': '寻血猎犬',
+        'otterhound': '奥达猎犬', 'borzoi': '俄罗斯猎狼犬', 'Irish wolfhound': '爱尔兰猎狼犬',
+        'Italian greyhound': '意大利灵缇', 'Norwegian elkhound': '挪威猎麋犬',
+        'African hunting dog': '非洲野犬', 'dingo': '澳洲野犬', 'redbone': '红骨猎犬',
+        'Walker hound': '沃克猎犬', 'bluetick': '蓝斑猎犬', 'black-and-tan coonhound': '黑褐浣熊犬',
+        'English foxhound': '英国猎狐犬', 'otterhound': '奥达猎犬',
+        'beagle': '比格犬', 'basset': '巴塞特猎犬', 'hamster': '仓鼠',
+        // 猫类
+        'tabby': '虎斑猫', 'tiger cat': '虎斑猫', 'Persian cat': '波斯猫',
+        'Siamese cat': '暹罗猫', 'Egyptian cat': '埃及猫', 'cougar': '美洲狮',
+        'lynx': '猞猁', 'leopard': '豹', 'snow leopard': '雪豹',
+        'jaguar': '美洲豹', 'lion': '狮子', 'tiger': '老虎',
+        'cheetah': '猎豹',
+        // 鸟类
+        'cock': '公鸡', 'hen': '母鸡', 'ostrich': '鸵鸟', 'brambling': '燕雀',
+        'goldfinch': '金翅雀', 'house finch': '家朱雀', 'junco': '灯草鹀',
+        'indigo bunting': '靛蓝彩鹀', 'robin': '知更鸟', 'bulbul': '鹎',
+        'jay': '松鸦', 'magpie': '喜鹊', 'blackbird': '黑鸟',
+        'towhee': '唧鹀', 'cuckoo': '杜鹃', 'black stork': '黑鹳',
+        'white stork': '白鹳', 'flamingo': '火烈鸟', 'American coot': '美洲骨顶',
+        'bustard': '鸨', 'ruddy turnstone': '红腹滨鹬', 'dowitcher': '半蹼鹬',
+        'red-backed sandpiper': '红背鹬', 'redshank': '红脚鹬', 'sanderling': '三趾滨鹬',
+        'semipalmated plover': '半蹼鸻', 'whimbrel': '中杓鹬', 'spine': '尖尾滨鹬',
+        'quail': '鹌鹑', 'partridge': '鹧鸪', 'grey parrot': '非洲灰鹦鹉',
+        'macaw': '金刚鹦鹉', 'sulphur-crested cockatoo': '葵花凤头鹦鹉',
+        'lorikeet': '吸蜜鹦鹉', 'coucal': '鸦鹃', 'bee eater': '蜂虎',
+        'hornbill': '犀鸟', 'hummingbird': '蜂鸟', 'jacamar': '鹩鹑',
+        'toucan': '巨嘴鸟', 'drake': '公鸭', 'red-breasted merganser': '红胸秋沙鸭',
+        'goose': '鹅', 'black swan': '黑天鹅', 'white stork': '白鹳',
+        'ptarmigan': '岩雷鸟', 'ruffed grouse': '披肩鸡', 'prairie chicken': '草原榛鸡',
+        'peacock': '孔雀', 'quail': '鹌鹑', 'kitfox': '狐',
+        ' Arctic fox': '北极狐', 'grey fox': '灰狐', 'red fox': '红狐',
+        'polecat': '林鼬', 'mink': '水貂', 'black-footed ferret': '黑足雪貂',
+        'weasel': '黄鼬', 'otter': '水獭', 'skunk': '臭鼬',
+        'badger': '獾', 'armadillo': '犰狳',
+        'Wood Rabbit': '林兔', 'hare': '野兔', 'Angora': '安哥拉兔',
+        'hamster': '仓鼠', 'porcupine': '豪猪', 'fox squirrel': '狐松鼠',
+        'marmot': '旱獭', 'beaver': '河狸', 'mouse': '鼠', 'guinea pig': '豚鼠',
+        'chinchilla': '毛丝鼠', 'chipmunk': '花栗鼠',
+        // 野生大型动物
+        'African elephant': '非洲象', 'Indian elephant': '亚洲象',
+        'giant panda': '大熊猫', 'lesser panda': '小熊猫',
+        'brown bear': '棕熊', 'sloth bear': '懒熊', 'American black bear': '美洲黑熊',
+        'ice bear': '北极熊', 'Madagascar cat': '马岛狸',
+        'mongoose': '獴', 'colobus': '疣猴', 'gorilla': '大猩猩',
+        'chimpanzee': '黑猩猩', 'orangutan': '猩猩', 'macaque': '猕猴',
+        'langur': '叶猴', 'guenon': '长尾猴', 'baboon': '狒狒',
+        'gibbon': '长臂猿', 'siamang': '合趾猿', 'Spider monkey': '蜘蛛猴',
+        'howler monkey': '吼猴', 'titi': '伶猴', 'indri': '大狐猴',
+        'lemur': '狐猴', 'capuchin': '卷尾猴', 'marmoset': '狨',
+        'zebra': '斑马', 'horse': '马', 'sorrel': '栗色马',
+        'ox': '牛', 'water buffalo': '水牛', 'bison': '美洲野牛',
+        'ram': '公羊', 'ibex': '山羊', 'hartebeest': '狷羚',
+        'impala': '黑斑羚', 'gazelle': '瞪羚', 'Arabian camel': '单峰驼',
+        'llama': '羊驼', 'weasel': '黄鼬',
+        // 海洋与两爬
+        'dugong': '儒艮', 'sea lion': '海狮', 'killer whale': '虎鲸',
+        'grey whale': '灰鲸', 'great white shark': '大白鲨', 'tiger shark': '虎鲨',
+        'hammerhead': '锤头鲨', 'sturgeon': '鲟鱼', 'gar': '雀鳝',
+        'electric ray': '电鳐', ' stingray': '黄貂鱼', 'oyster': '牡蛎',
+        'snail': '蜗牛', 'slug': '蛞蝓', 'chiton': '石鳖',
+        'chambered nautilus': '鹦鹉螺', 'sea anemone': '海葵', 'brain coral': '脑珊瑚',
+        'flatworm': '扁形虫', 'nematode': '线虫', 'sea urchin': '海胆',
+        'sea cucumber': '海参', 'jellyfish': '水母', 'starfish': '海星',
+        'sand dollar': '沙钱', 'conch': '海螺', 'spider crab': '雪蟹',
+        'Dungeness crab': '珍宝蟹', 'rock crab': '岩蟹', 'fiddler crab': '招潮蟹',
+        'king crab': '帝王蟹', 'American lobster': '美洲龙虾', 'spiny lobster': '锦绣龙虾',
+        'crayfish': '小龙虾', 'hermit crab': '寄居蟹', 'isopod': '等足虫',
+        'trilobite': '三叶虫', 'harvestman': '盲蛛', 'scorpion': '蝎子',
+        'black and gold garden spider': '金蛛', 'barn spider': '谷仓蜘蛛',
+        'garden spider': '园蛛', 'black widow': '黑寡妇蜘蛛', 'tarantula': '捕鸟蛛',
+        'wolf spider': '狼蛛', 'tick': '蜱虫', 'centipede': '蜈蚣',
+        'black grouse': '黑琴鸡', 'ptarmigan': '岩雷鸟', 'European gallinule': '紫水鸡',
+        'seashore': '海岸', 'coral reef': '珊瑚礁',
+        // 昆虫
+        'monarch': '帝王蝶', 'cabbage butterfly': '菜粉蝶', 'sulphur butterfly': '硫磺蝶',
+        'lycaenid': '灰蝶', 'ringlet': '眼蝶', 'lacewing': '草蛉',
+        'damselfly': '豆娘', 'dragonfly': '蜻蜓', 'walking stick': '竹节虫',
+        'cicada': '蝉', 'leafhopper': '叶蝉', 'plant hopper': '蜡蝉',
+        'aphid': '蚜虫', 'whitefly': '粉虱', 'leaf insect': '叶虫',
+        'mantis': '螳螂', 'cicada': '蝉', 'grasshopper': '蚱蜢',
+        'cricket': '蟋蟀', 'June beetle': '六月鳃角金龟', 'rhinoceros beetle': '犀牛角金龟',
+        'weevil': '象鼻虫', 'fly': '苍蝇', 'bee': '蜜蜂',
+        'ant': '蚂蚁', 'leaf beetle': '叶甲虫', 'long-horned beetle': '天牛',
+        'ladybug': '瓢虫', 'ground beetle': '步甲虫', 'tiger beetle': '虎甲虫',
+        'water strider': '水黾', 'flea': '跳蚤',
+        // 两栖爬行
+        'green lizard': '绿蜥蜴', 'Komodo dragon': '科莫多巨蜥', 'American alligator': '美洲短吻鳄',
+        'American crocodile': '美洲鳄', 'thunder snake': '蛇蜥', 'ringneck snake': '环颈蛇',
+        'hognose snake': '猪鼻蛇', 'green snake': '绿蛇', 'king snake': '王蛇',
+        'garter snake': '束带蛇', 'water snake': '水蛇', 'vine snake': '藤蛇',
+        'night snake': '夜蛇', 'boa constrictor': '蟒蛇', 'rock python': '岩蟒',
+        'Indian cobra': '印度眼镜蛇', 'milk snake': '乳蛇', 'sea snake': '海蛇',
+        'horned viper': '角蝰', 'sidewinder': '响尾蛇', 'agama': '飞蜥',
+        'frilled lizard': '伞蜥', 'alligator lizard': '鳄蜥', 'Gila monster': '吉拉毒蜥',
+        'European fire salamander': '火蝾螈', 'spotted salamander': '斑点蝾螈',
+        'axolotl': '墨西哥钝口螈', 'bullfrog': '牛蛙', 'tree frog': '树蛙',
+        'tailed frog': '尾蛙', 'spiny lobster': '锦绣龙虾',
+        // 鱼
+        'goldfish': '金鱼', 'clownfish': '小丑鱼', 'sturgeon': '鲟鱼',
+        'gar': '雀鳝', 'eel': '鳗鱼', 'coho': '银鲑',
+        'great white shark': '大白鲨', 'tiger shark': '虎鲨', 'hammerhead': '锤头鲨',
+        'anemone fish': '小丑鱼', 'sea lion': '海狮', 'dugong': '儒艮',
+        // 其他
+        'komondor': '可蒙犬', 'Old English sheepdog': '古代英国牧羊犬',
+        'Shih-Tzu': '西施犬', 'Lhasa': '拉萨犬', 'Pekinese': '北京犬',
+        'Japanese spaniel': '日本狆', 'Maltese dog': '马尔济斯犬',
+        'papillon': '蝴蝶犬', 'toy poodle': '玩具贵宾犬', 'standard poodle': '标准贵宾犬',
+        'miniature poodle': '迷你贵宾犬', 'Tibetan terrier': '西藏梗',
+        'Tibetan mastiff': '藏獒', 'Chihuahua': '吉娃娃', 'Brabancon griffon': '布拉班松格里芬犬',
+        'Pembroke': '彭布罗克威尔士柯基', 'Cardigan': '卡迪根威尔士柯基',
+        'French bulldog': '法国斗牛犬', 'Saint Bernard': '圣伯纳犬',
+        'Egyptian Mau': '埃及猫', 'pug': '哈巴狗'
       },
 
       async init() {
@@ -850,11 +1000,15 @@
           ctx.strokeRect(x, y, w, h);
           ctx.shadowBlur = 0;
 
-          // 标签：细粒度分类结果优先，否则用 COCO 大类
-          const cn = this.getCn(p.class);
+          // 标签：细粒度中文为主，英文细粒度为辅
+          const fineCn = this.getFineCn(p.fineLabel, p.class);
+          const fineEn = p.fineLabel ? p.fineLabel.split(',')[0].trim() : '';
           const conf = (p.score * 100).toFixed(0);
-          const fine = p.fineLabel ? ` · ${p.fineLabel.split(',')[0]}` : '';
-          const label = `${cn}${fine} ${conf}%`;
+          // 中文匹配上英文（未命中翻译）则不重复显示英文
+          const showEn = fineEn && fineEn.toLowerCase() !== fineCn.toLowerCase();
+          const label = showEn
+            ? `${fineCn} · ${fineEn} ${conf}%`
+            : `${fineCn} ${conf}%`;
           ctx.font = `${Math.max(14, vw / 60)}px sans-serif`;
           const tw = ctx.measureText(label).width + 10;
           const th = Math.max(20, vh / 30);
@@ -866,6 +1020,21 @@
       },
       // 获取大类中文名
       getCn(cls) { return this.CN[cls] || cls; },
+      // 获取细粒度中文名：优先查表，未命中则回退到大类中文名
+      getFineCn(fineLabel, cocoClass) {
+        if (!fineLabel) return this.getCn(cocoClass);
+        const main = fineLabel.split(',')[0].trim();
+        // 精确匹配
+        if (this.FINE_CN[main]) return this.FINE_CN[main];
+        // 忽略大小写匹配
+        const key = Object.keys(this.FINE_CN).find(k => k.toLowerCase() === main.toLowerCase());
+        if (key) return this.FINE_CN[key];
+        // 包含匹配（细粒度标签含某关键词）
+        const k2 = Object.keys(this.FINE_CN).find(k => main.toLowerCase().includes(k.toLowerCase()));
+        if (k2) return this.FINE_CN[k2];
+        // 未命中，返回英文原文
+        return main;
+      },
       // 渲染右侧底部动物列表
       render(results) {
         if (!results || results.length === 0) {
@@ -878,15 +1047,16 @@
         // 底部列表
         const colors = ['#36CFC9', '#FF7D00', '#A855F7', '#22C55E', '#FACC15'];
         const html = results.map((p, i) => {
-          const cn = this.getCn(p.class);
+          const fineCn = this.getFineCn(p.fineLabel, p.class);
+          const fineEn = p.fineLabel ? p.fineLabel.split(',')[0].trim() : '';
           const conf = (p.score * 100).toFixed(1);
-          const fine = p.fineLabel ? p.fineLabel.split(',')[0] : '';
           const fineConf = p.fineScore ? (p.fineScore * 100).toFixed(1) + '%' : '';
           const color = colors[i % colors.length];
+          const showEn = fineEn && fineEn.toLowerCase() !== fineCn.toLowerCase();
           return `
         <div class="text-[11px]">
           <div class="flex items-center justify-between mb-0.5">
-            <span style="color:${color}" class="font-semibold">${i + 1}. ${cn}${fine ? ' · <span class="text-txt">' + fine + '</span>' : ''}</span>
+            <span style="color:${color}" class="font-semibold">${i + 1}. ${fineCn}${showEn ? ' · <span class="text-txt">' + fineEn + '</span>' : ''}</span>
             <span class="text-mute big-num">${conf}%</span>
           </div>
           <div class="ch-bar" style="height:5px;"><i style="width:${conf}%;background:${color};"></i></div>
@@ -905,7 +1075,11 @@
           st.className = 'text-cyan';
           // 取置信度最高的作为主目标
           const best = results.reduce((a, b) => a.score > b.score ? a : b);
-          const label = best.fineLabel ? this.getCn(best.class) + ' · ' + best.fineLabel.split(',')[0] : this.getCn(best.class);
+          // 细粒度中文为主，英文为辅（与框内标签、列表保持一致）
+          const fineCn = this.getFineCn(best.fineLabel, best.class);
+          const fineEn = best.fineLabel ? best.fineLabel.split(',')[0].trim() : '';
+          const showEn = fineEn && fineEn.toLowerCase() !== fineCn.toLowerCase();
+          const label = showEn ? `${fineCn} · ${fineEn}` : fineCn;
           document.getElementById('detectTarget').textContent = label;
           document.getElementById('detectConf').textContent = (best.score * 100).toFixed(1) + '%';
         } else {
