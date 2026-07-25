@@ -17,6 +17,15 @@
   <!-- Leaflet 地图库（OpenStreetMap 瓦片，免费无 API Key） -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+  <!-- Three.js 3D 蝴蝶模型渲染（ES Module + importmap） -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 
   <script>
     // Tailwind 自定义主题配置：深色科技风
@@ -355,10 +364,10 @@
   <!-- ============= 主体内容 ============= -->
   <main class="flex-1 overflow-hidden flex flex-col gap-3 p-3 min-h-0">
 
-    <!-- ===== 第一行：摄像头 + 姿态传感器 ===== -->
+    <!-- ===== 第一行：摄像头 + 3D 蝴蝶 + 姿态传感器 ===== -->
     <section class="flex-1 grid grid-cols-12 gap-3 min-h-0">
       <!-- 摄像头卡片 -->
-      <div class="card p-3 col-span-7 flex flex-col min-h-0">
+      <div class="card p-3 col-span-5 flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-2 flex-shrink-0">
           <h2 class="title-bar text-sm font-semibold">USB 摄像头实时画面</h2>
           <div class="flex items-center gap-2">
@@ -446,8 +455,34 @@
         </div>
       </div>
 
+      <!-- 3D 蝴蝶模型卡片 -->
+      <div class="card p-3 col-span-3 flex flex-col min-h-0">
+        <div class="flex items-center justify-between mb-2 flex-shrink-0">
+          <h2 class="title-bar text-sm font-semibold">3D 蝴蝶姿态</h2>
+          <span id="butterflyInfo" class="text-[11px] text-mute">--</span>
+        </div>
+        <div id="butterfly3DBox" class="flex-1 min-h-0 relative rounded-lg overflow-hidden border border-slate-800"
+          style="background:radial-gradient(circle at 50% 35%, #14233f 0%, #0a1426 70%);">
+          <!-- Three.js canvas 将插入这里 -->
+          <div id="butterfly3DFallback" class="absolute inset-0 flex items-center justify-center text-mute text-xs">
+            3D 模型加载中…
+          </div>
+        </div>
+        <!-- 翅膀角度数据条 -->
+        <div class="grid grid-cols-2 gap-2 mt-2 flex-shrink-0">
+          <div class="bg-panel2/70 rounded-lg p-1.5 border border-slate-800 text-center">
+            <div class="text-[10px] text-mute">左翅 L</div>
+            <div class="text-sm big-num text-cyan" id="butterflyLeftAngle">0°</div>
+          </div>
+          <div class="bg-panel2/70 rounded-lg p-1.5 border border-slate-800 text-center">
+            <div class="text-[10px] text-mute">右翅 R</div>
+            <div class="text-sm big-num text-cyan" id="butterflyRightAngle">0°</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 姿态传感器卡片 -->
-      <div class="card p-3 col-span-5 flex flex-col min-h-0">
+      <div class="card p-3 col-span-4 flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-2 flex-shrink-0">
           <h2 class="title-bar text-sm font-semibold">姿态传感器 · 陀螺 / 加速度 / 磁力</h2>
           <span class="text-[11px] text-mute">三轴实时曲线</span>
@@ -564,6 +599,48 @@
           <span class="text-[11px] text-mute">-90~90°</span>
         </div>
         <div id="motorList" class="grid grid-cols-2 gap-2 flex-1 min-h-0 content-center"></div>
+      </div>
+    </section>
+
+    <!-- ===== 第三行：模拟数据控制台 ===== -->
+    <section id="mockPanel" class="hidden card p-3 flex-shrink-0">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="title-bar text-sm font-semibold">模拟数据控制台</h2>
+        <span class="text-[11px] text-mute">拖动滑块调整俯仰/横滚/左右翅角度</span>
+      </div>
+      <div class="grid grid-cols-4 gap-3">
+        <!-- 俯仰 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="text-mute">俯仰 Pitch</span>
+            <span id="mockPitchVal" class="text-cyan big-num">0°</span>
+          </div>
+          <input id="mockPitch" type="range" min="-45" max="45" value="0" step="1" class="w-full accent-cyan">
+        </div>
+        <!-- 横滚 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="text-mute">横滚 Roll</span>
+            <span id="mockRollVal" class="text-cyan big-num">0°</span>
+          </div>
+          <input id="mockRoll" type="range" min="-45" max="45" value="0" step="1" class="w-full accent-cyan">
+        </div>
+        <!-- 左翅 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="text-mute">左翅 L</span>
+            <span id="mockLeftVal" class="text-orange big-num">0°</span>
+          </div>
+          <input id="mockLeft" type="range" min="-90" max="90" value="0" step="1" class="w-full accent-orange">
+        </div>
+        <!-- 右翅 -->
+        <div class="bg-panel2/70 rounded-lg p-2 border border-slate-800">
+          <div class="flex items-center justify-between text-[11px] mb-1">
+            <span class="text-mute">右翅 R</span>
+            <span id="mockRightVal" class="text-orange big-num">0°</span>
+          </div>
+          <input id="mockRight" type="range" min="-90" max="90" value="0" step="1" class="w-full accent-orange">
+        </div>
       </div>
     </section>
 
@@ -1443,10 +1520,20 @@
         const ACC = 0.001197;    // raw → m/s²
         const GYRO = 0.070;      // raw → dps (°/s)
         const MAG = 0.15;        // raw → µT
+        // 异常剔除：换算后值超过量程 1.5 倍视为脏数据，整帧丢弃
+        // 量程：加速度 ±4g≈±39.2 m/s²，陀螺 ±2000 dps，磁力计 ±50 Gauss=±5000 µT
+        const aX = ax * ACC, aY = ay * ACC, aZ = az * ACC;
+        const gX = gx * GYRO, gY = gy * GYRO, gZ = gz * GYRO;
+        const mX = mx * MAG, mY = my * MAG, mZ = mz * MAG;
+        if (Math.abs(aX) > 60 || Math.abs(aY) > 60 || Math.abs(aZ) > 60) return;
+        if (Math.abs(gX) > 3000 || Math.abs(gY) > 3000 || Math.abs(gZ) > 3000) return;
+        if (Math.abs(mX) > 7500 || Math.abs(mY) > 7500 || Math.abs(mZ) > 7500) return;
+        // 全 0 视为传感器断线
+        if (aX === 0 && aY === 0 && aZ === 0 && gX === 0 && gY === 0 && gZ === 0) return;
         Dispatcher.handle({
-          gyro: { x: gx * GYRO, y: gy * GYRO, z: gz * GYRO },          // °/s
-          accel: { x: ax * ACC, y: ay * ACC, z: az * ACC },            // m/s²
-          mag: { x: mx * MAG, y: my * MAG, z: mz * MAG }               // µT
+          gyro: { x: gX, y: gY, z: gZ },          // °/s
+          accel: { x: aX, y: aY, z: aZ },          // m/s²
+          mag: { x: mX, y: mY, z: mZ }             // µT
         });
       },
       // 0x81 气压计（小端，8字节）
@@ -1454,9 +1541,13 @@
         if (p.length < 8) return;
         // const pressure_raw = this.readInt32LE(p, 0);  // 原始值（未使用）
         const pressure_hPa = this.readUInt24LE(p, 4) / 100;  // hPa
+        // 异常剔除：气压物理范围 300~1100 hPa（覆盖珠峰到海平面）
+        if (!isFinite(pressure_hPa) || pressure_hPa < 300 || pressure_hPa > 1100) return;
         // 气压换算高度（国际大气压标准公式）
         // h = 44330 * (1 - (P/1013.25)^(1/5.255))
         const altitude = 44330 * (1 - Math.pow(pressure_hPa / 1013.25, 1 / 5.255));
+        // 高度异常保护（-500m ~ +15000m）
+        if (!isFinite(altitude) || altitude < -500 || altitude > 15000) return;
         Dispatcher.handle({
           pressure: pressure_hPa,
           altitude: altitude
@@ -1469,7 +1560,15 @@
         if (p.length < 4) return;
         const leftRaw = this.readInt16LE(p, 0);
         const rightRaw = this.readInt16LE(p, 2);
-        const toAngle = (raw) => (2048 - raw) * 90 / 1024;
+        // 异常剔除：raw 范围 0~4095（12位 ADC），超出视为无效
+        if (leftRaw < 0 || leftRaw > 4095 || rightRaw < 0 || rightRaw > 4095) return;
+        const toAngle = (raw) => {
+          let a = (2048 - raw) * 90 / 1024;
+          // clamp 到物理量程 -90~+90
+          if (a > 90) a = 90;
+          if (a < -90) a = -90;
+          return a;
+        };
         Dispatcher.handle({
           motor_angle: [toAngle(leftRaw), toAngle(rightRaw)]
         });
@@ -1481,6 +1580,10 @@
         for (let i = 0; i < 11; i++) {
           ch.push(this.readUInt16LE(p, i * 2));
         }
+        // 异常剔除：任一通道超出 0~2000 视为脏帧，整帧丢弃
+        for (let i = 0; i < 11; i++) {
+          if (!isFinite(ch[i]) || ch[i] < 0 || ch[i] > 2000) return;
+        }
         Dispatcher.handle({
           rc_channel: ch
         });
@@ -1491,25 +1594,38 @@
         const year = this.readUInt16LE(p, 0);
         const month = p[2], day = p[3], hour = p[4], minute = p[5], second = p[6];
         // const fix_type = p[7];  // 定位类型（当前UI未显示）
-        const sats = p[8];
+        let sats = p[8];
         const lat = this.readInt32LE(p, 9) / 1e7;
         const lon = this.readInt32LE(p, 13) / 1e7;
         const alt_cm = this.readInt32LE(p, 17);
         const speed_cms = this.readUInt16LE(p, 21);
+        // 异常剔除：卫星数范围 0~50
+        if (!isFinite(sats) || sats > 50) sats = 0;
+        // 经纬度物理范围：lat ±90，lon ±180；超范围或 (0,0) 且 sats=0 视为未定位
+        let validFix = (sats > 0 && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 &&
+                       !(lat === 0 && lon === 0));
         // 构造 UTC 时间戳（秒）
         let ts = Math.floor(Date.now() / 1000);
-        if (year >= 2000) {
+        if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 &&
+            day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 60) {
           const d = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
           ts = Math.floor(d.getTime() / 1000);
         }
+        // 高度异常保护（-1000m ~ +20000m）
+        let alt_m = alt_cm / 100;
+        if (!isFinite(alt_m) || alt_m < -1000 || alt_m > 20000) alt_m = 0;
+        // 速度异常保护（0~1000 m/s）
+        let speed_m = speed_cms / 100;
+        if (!isFinite(speed_m) || speed_m < 0 || speed_m > 1000) speed_m = 0;
         Dispatcher.handle({
           gps: {
-            lon: lon,
-            lat: lat,
-            speed: speed_cms / 100,        // cm/s → m/s
-            altitude: alt_cm / 100,        // GPS 高度 cm → m，仅在 GPS 卡片显示
+            lon: validFix ? lon : 0,
+            lat: validFix ? lat : 0,
+            speed: speed_m,                 // m/s
+            altitude: alt_m,                // GPS 高度 m，仅在 GPS 卡片显示
             sat_num: sats,
-            timestamp: ts
+            timestamp: ts,
+            valid: validFix                 // 是否有效定位
           }
           // 注意：不再写入顶层 altitude，气压高度由 0x81 气压计帧单独提供
         });
@@ -1555,12 +1671,12 @@
 
         // 分发各模块
         if (obj.gyro) UI.updateGyro(obj.gyro);
-        if (obj.accel) UI.updateAccel(obj.accel);
+        if (obj.accel) { UI.updateAccel(obj.accel); Butterfly3D && Butterfly3D.updateAccel && Butterfly3D.updateAccel(obj.accel); }
         if (obj.mag) UI.updateMag(obj.mag);
         if (obj.pressure !== undefined) UI.updatePressure(obj.pressure);
         if (obj.altitude !== undefined) UI.updateAltitude(obj.altitude);
         if (obj.rc_channel) UI.updateRC(obj.rc_channel);
-        if (obj.motor_angle) UI.updateMotor(obj.motor_angle);
+        if (obj.motor_angle) { UI.updateMotor(obj.motor_angle); Butterfly3D && Butterfly3D.updateMotor && Butterfly3D.updateMotor(obj.motor_angle); }
         if (obj.gps) UI.updateGPS(obj.gps);
       }
     };
@@ -1884,38 +2000,78 @@
       }
     };
 
-    /* ---------- 7. 模拟数据（无设备时演示） ---------- */
+    /* ---------- 7. 模拟数据（无设备时演示，仅本地开发可用） ---------- */
     const Mock = {
       timer: null,
       btn: document.getElementById('btnMock'),
       active: false,
+      // 四个滑块控制的姿态/翅膀角度（由 UI 滑块实时读取）
+      pitch: 0,       // 俯仰角 -45~45°
+      roll: 0,        // 横滚角 -45~45°
+      leftWing: 0,    // 左翅角度 -90~90°
+      rightWing: 0,   // 右翅角度 -90~90°
       init() {
+        // 线上环境（非 localhost）禁用模拟数据：隐藏按钮，不绑定事件
+        const host = location.hostname;
+        const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '';
+        if (!isLocal) {
+          if (this.btn) this.btn.style.display = 'none';
+          return;
+        }
         this.btn.addEventListener('click', () => {
           if (this.active) this.stop();
           else this.start();
         });
+        // 绑定四个滑块：拖动时实时更新角度值与显示
+        const bind = (id, key, valId) => {
+          const el = document.getElementById(id);
+          const valEl = document.getElementById(valId);
+          if (!el || !valEl) return;
+          el.addEventListener('input', () => {
+            this[key] = parseFloat(el.value);
+            valEl.textContent = this[key].toFixed(0) + '°';
+          });
+        };
+        bind('mockPitch', 'pitch', 'mockPitchVal');
+        bind('mockRoll', 'roll', 'mockRollVal');
+        bind('mockLeft', 'leftWing', 'mockLeftVal');
+        bind('mockRight', 'rightWing', 'mockRightVal');
       },
       start() {
         this.active = true;
         this.btn.textContent = '停止模拟';
         this.btn.classList.remove('btn-ghost');
         this.btn.classList.add('btn-danger');
-        // 初始基准值
+        // 显示模拟控制面板
+        const panel = document.getElementById('mockPanel');
+        if (panel) panel.classList.remove('hidden');
+        // 初始基准值（仅用于气压/GPS 等非滑块控制数据）
         let t = 0;
         let altBase = 426;
         let lon = 108.9621839, lat = 34.2596616;
         this.timer = setInterval(() => {
           t += 0.05;
+          // 由俯仰/横滚角度反推加速度计分量（与 Butterfly3D.updateAccel 公式对应）
+          // 静止时加速度计测量重力 g≈9.8 m/s²，方向朝下
+          // pitch 绕 X 轴：ay = -g·sin(pitch), az = g·cos(pitch)
+          // roll  绕 Z 轴：ax = g·sin(roll),  az = g·cos(roll)
+          const g = 9.8;
+          const pRad = this.pitch * Math.PI / 180;
+          const rRad = this.roll * Math.PI / 180;
+          const ax = g * Math.sin(rRad);
+          const ay = -g * Math.sin(pRad) * Math.cos(rRad);
+          const az = g * Math.cos(pRad) * Math.cos(rRad) + (Math.random() - 0.5) * 0.15;
           const obj = {
             gyro: {
-              x: Math.sin(t * 1.3) * 120 + (Math.random() - 0.5) * 20,
-              y: Math.cos(t * 1.1) * 90 + (Math.random() - 0.5) * 20,
-              z: Math.sin(t * 0.7) * 60 + (Math.random() - 0.5) * 10,
+              // 陀螺仪在静态时近似为 0，加入轻微噪声
+              x: (Math.random() - 0.5) * 3,
+              y: (Math.random() - 0.5) * 3,
+              z: (Math.random() - 0.5) * 2,
             },
             accel: {
-              x: Math.sin(t * 2.0) * 3 + (Math.random() - 0.5) * 0.5,
-              y: Math.cos(t * 1.7) * 2 + (Math.random() - 0.5) * 0.5,
-              z: 9.8 + Math.sin(t * 0.5) * 0.5 + (Math.random() - 0.5) * 0.3,
+              x: ax + (Math.random() - 0.5) * 0.2,
+              y: ay + (Math.random() - 0.5) * 0.2,
+              z: az,
             },
             mag: {
               x: 25 + Math.sin(t * 0.4) * 5,
@@ -1937,16 +2093,16 @@
               1000 + Math.cos(t * 0.5) * 450,
               1000 + Math.sin(t * 0.95) * 850,
             ],
-            // 电机角度（-90~90°），左右翅膀同步扑翼，数值近似（仅微小差异）
+            // 电机角度：直接使用滑块值，加入轻微噪声让 3D 翅膀有扑翼质感
             motor_angle: [
-              Math.sin(t * 1.5) * 80,
-              Math.sin(t * 1.5 + 0.08) * 78,
+              this.leftWing + (Math.random() - 0.5) * 0.5,
+              this.rightWing + (Math.random() - 0.5) * 0.5,
             ],
             gps: {
               lon: lon + Math.sin(t * 0.1) * 0.0005,
               lat: lat + Math.cos(t * 0.1) * 0.0005,
               speed: 3 + Math.abs(Math.sin(t)) * 2,
-              altitude: 80 + Math.sin(t * 0.2) * 5,   // GPS 高度，与气压高度独立
+              altitude: 80 + Math.sin(t * 0.2) * 5,
               sat_num: 8 + Math.floor(Math.sin(t) * 2),
               timestamp: Math.floor(Date.now() / 1000),
             }
@@ -1960,6 +2116,9 @@
         this.btn.classList.remove('btn-danger');
         this.btn.classList.add('btn-ghost');
         if (this.timer) clearInterval(this.timer);
+        // 隐藏模拟控制面板
+        const panel = document.getElementById('mockPanel');
+        if (panel) panel.classList.add('hidden');
       }
     };
 
@@ -2108,6 +2267,231 @@
         GpsMap.init();
       }));
     });
+
+    /* ---------- 9. 3D 蝴蝶模型（Three.js ES Module） ---------- */
+    // 模块独立，使用动态 import 加载 Three.js，加载完成后初始化并暴露到 window.Butterfly3D
+    (async () => {
+      try {
+        const THREE = await import('three');
+        const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+
+        const container = document.getElementById('butterfly3DBox');
+        if (!container) return;
+
+        // ---- 场景 / 相机 / 渲染器 ----
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+        camera.position.set(0, 1.2, 6.5);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x000000, 0);
+        container.appendChild(renderer.domElement);
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        renderer.domElement.style.display = 'block';
+
+        // 灯光：主光 + 补光 + 环境光
+        scene.add(new THREE.AmbientLight(0x88aaff, 0.55));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        keyLight.position.set(3, 5, 4);
+        scene.add(keyLight);
+        const fillLight = new THREE.DirectionalLight(0x36CFC9, 0.6);
+        fillLight.position.set(-4, 2, -2);
+        scene.add(fillLight);
+        const rimLight = new THREE.PointLight(0x165DFF, 0.8, 10);
+        rimLight.position.set(0, -1, -3);
+        scene.add(rimLight);
+
+        // 网格地面（科技感）
+        const grid = new THREE.GridHelper(10, 20, 0x165DFF, 0x1e3a5f);
+        grid.position.y = -1.8;
+        grid.material.transparent = true;
+        grid.material.opacity = 0.35;
+        scene.add(grid);
+
+        // 轨道控制器（用户可拖拽旋转视角）
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.1;
+        controls.minDistance = 4;
+        controls.maxDistance = 12;
+        controls.target.set(0, 0, 0);
+
+        // ---- 蝴蝶模型构建 ----
+        const butterfly = new THREE.Group();
+        scene.add(butterfly);
+
+        // 材质
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.5, metalness: 0.4 });
+        const wingMat = new THREE.MeshStandardMaterial({
+          color: 0x165DFF, roughness: 0.3, metalness: 0.2,
+          side: THREE.DoubleSide, transparent: true, opacity: 0.88,
+          emissive: 0x0a2a5a, emissiveIntensity: 0.3
+        });
+        const wingMatR = wingMat.clone();
+        wingMatR.color = new THREE.Color(0x36CFC9);
+        wingMatR.emissive = new THREE.Color(0x0a4a4a);
+
+        // 身体（细长椭球，沿 Z 轴方向）
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.18, 20, 16), bodyMat);
+        body.scale.set(1, 1, 3.2);
+        butterfly.add(body);
+
+        // 头部
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), bodyMat);
+        head.position.z = 0.65;
+        butterfly.add(head);
+
+        // 翅膀生成函数：椭圆形薄翼
+        function makeWing(isLeft, isFore) {
+          const wingShape = new THREE.Shape();
+          // 蝶翼轮廓：从根部向外伸展，前翅较狭长，后翅较圆宽
+          // 形状在 XY 平面，沿 +X 方向延伸
+          const len = isFore ? 1.8 : 1.4;
+          const wid = isFore ? 1.1 : 1.0;
+          wingShape.moveTo(0, 0);
+          wingShape.bezierCurveTo(len * 0.3, wid * 0.9, len * 0.85, wid * 0.7, len, 0);
+          wingShape.bezierCurveTo(len * 0.85, -wid * 0.5, len * 0.3, -wid * 0.4, 0, 0);
+          const geo = new THREE.ShapeGeometry(wingShape, 24);
+          const mat = isLeft ? wingMat : wingMatR;
+          const wing = new THREE.Mesh(geo, mat);
+          // ShapeGeometry 默认在 XY 平面（竖直），需要旋转到水平面 XZ
+          // 绕 X 轴旋转 -90°：XY 平面 → XZ 平面，翅膀水平展开
+          wing.rotation.x = -Math.PI / 2;
+          // 左翅需要绕 Y 轴翻转 180°，让它朝 -X 方向延伸（左侧）
+          if (isLeft) {
+            wing.rotation.y = Math.PI;
+          }
+          // 翅膀沿机身 Z 轴的前后位置
+          wing.position.z = isFore ? 0.2 : -0.35;
+          return wing;
+        }
+
+        // 四只翅膀：左前/左后/右前/右后
+        const wingLF = makeWing(true, true);   // 左前翅（-X 侧）
+        const wingLB = makeWing(true, false);  // 左后翅
+        const wingRF = makeWing(false, true);  // 右前翅（+X 侧）
+        const wingRB = makeWing(false, false); // 右后翅
+        // 用 Group 包装，扇动通过 Group 的 rotation.z 实现（绕机身轴 Z 旋转）
+        // 右翅（+X）：rotation.z = +angle → 翅尖向上
+        // 左翅（-X）：rotation.z = -angle → 翅尖向上（方向相反）
+        const leftWingGroup = new THREE.Group();
+        const rightWingGroup = new THREE.Group();
+        leftWingGroup.add(wingLF, wingLB);
+        rightWingGroup.add(wingRF, wingRB);
+        butterfly.add(leftWingGroup, rightWingGroup);
+
+        // 初始姿态：翅膀水平展开
+        leftWingGroup.rotation.z = 0;
+        rightWingGroup.rotation.z = 0;
+
+        // ---- 状态变量 ----
+        // 翅膀角度（来自电机数据，范围 -90~+90）
+        let leftWingAngle = 0, rightWingAngle = 0;
+        // 平滑后的姿态（来自加速度计，无漂移）
+        let pitch = 0, roll = 0, yaw = 0;
+
+        // ---- 自适应尺寸 ----
+        function resize() {
+          const w = container.clientWidth || 1;
+          const h = container.clientHeight || 1;
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+        }
+        resize();
+        const ro = new ResizeObserver(resize);
+        ro.observe(container);
+
+        // 隐藏 fallback
+        const fb = document.getElementById('butterfly3DFallback');
+        if (fb) fb.style.display = 'none';
+
+        // ---- 渲染循环 ----
+        const leftAngleEl = document.getElementById('butterflyLeftAngle');
+        const rightAngleEl = document.getElementById('butterflyRightAngle');
+        const infoEl = document.getElementById('butterflyInfo');
+        let frame = 0;
+
+        function animate() {
+          requestAnimationFrame(animate);
+          const now = performance.now();
+
+          // 翅膀扇动：电机角度 (-90~+90) → 翅膀 rotation.z（绕机身轴）
+          // 右翅（+X 侧）：正角度 → rotation.z 正值 → 翅尖向上
+          // 左翅（-X 侧）：正角度 → rotation.z 负值 → 翅尖向上（方向相反）
+          const targetLeft = -leftWingAngle * Math.PI / 180;
+          const targetRight = rightWingAngle * Math.PI / 180;
+          leftWingGroup.rotation.z += (targetLeft - leftWingGroup.rotation.z) * 0.3;
+          rightWingGroup.rotation.z += (targetRight - rightWingGroup.rotation.z) * 0.3;
+
+          // 蝴蝶整体姿态：应用 pitch/roll/yaw（度数 → 弧度）
+          butterfly.rotation.x = pitch * Math.PI / 180;
+          butterfly.rotation.z = roll * Math.PI / 180;
+          butterfly.rotation.y = yaw * Math.PI / 180;
+
+          // 闲置时轻微悬停摆动（无数据时让模型有生命力）
+          if (Math.abs(leftWingAngle) < 0.1 && Math.abs(rightWingAngle) < 0.1) {
+            butterfly.position.y = Math.sin(now * 0.001) * 0.08;
+            butterfly.rotation.y = Math.sin(now * 0.0008) * 0.15;
+          } else {
+            butterfly.position.y += (0 - butterfly.position.y) * 0.1;
+          }
+
+          controls.update();
+          renderer.render(scene, camera);
+
+          // 更新数值显示（每 10 帧一次，避免频繁 DOM 操作）
+          if (++frame % 10 === 0) {
+            if (leftAngleEl) leftAngleEl.textContent = leftWingAngle.toFixed(0) + '°';
+            if (rightAngleEl) rightAngleEl.textContent = rightWingAngle.toFixed(0) + '°';
+            if (infoEl) infoEl.textContent = `俯仰 ${pitch.toFixed(2)}° 滚转 ${roll.toFixed(2)}°`;
+          }
+        }
+        animate();
+
+        // ---- 暴露数据接口 ----
+        window.Butterfly3D = {
+          updateMotor(ma) {
+            if (!Array.isArray(ma)) return;
+            if (ma[0] !== undefined) leftWingAngle = Math.max(-90, Math.min(90, ma[0]));
+            if (ma[1] !== undefined) rightWingAngle = Math.max(-90, Math.min(90, ma[1]));
+          },
+          updateAccel(a) {
+            // 用加速度计计算姿态（重力方向反推俯仰/滚转）
+            // 加速度计静止时测量的是重力加速度 g≈9.8 m/s²，方向朝下
+            // 通过各轴分量占比反推机体相对于水平面的倾斜
+            const ax = a.x || 0, ay = a.y || 0, az = a.z || 0;
+            const g = Math.sqrt(ax * ax + ay * ay + az * az);
+            // 重力模长需在合理范围（0.5g~1.5g），否则视为动态运动不更新姿态
+            if (g < 5 || g > 15) return;
+            // 俯仰角 pitch（绕 X 轴）：由 Y、Z 轴加速度计算
+            // pitch = atan2(-ay, sqrt(ay² + az²))，但 butterfly 朝向 Z+，故用 ay/az
+            const targetPitch = Math.atan2(-ay, Math.sqrt(ay * ay + az * az)) * 180 / Math.PI;
+            // 滚转角 roll（绕 Z 轴）：由 X、Z 轴加速度计算
+            // 注意：机体 Z 轴朝前，roll 对应绕机身轴线旋转
+            const targetRoll = Math.atan2(ax, Math.sqrt(ay * ay + az * az)) * 180 / Math.PI;
+            // 平滑滤波（低通），避免高频抖动
+            pitch += (targetPitch - pitch) * 0.15;
+            roll += (targetRoll - roll) * 0.15;
+            // yaw 无法用加速度计计算（需磁力计），保持不变或缓慢回正
+            // 这里不做处理，yaw 保持 0
+          },
+          reset() {
+            leftWingAngle = 0; rightWingAngle = 0;
+            pitch = 0; roll = 0; yaw = 0;
+          }
+        };
+
+        console.log('[Butterfly3D] 初始化成功');
+      } catch (err) {
+        console.error('[Butterfly3D] 初始化失败:', err);
+        const fb = document.getElementById('butterfly3DFallback');
+        if (fb) fb.textContent = '3D 模型加载失败：' + (err && err.message ? err.message : err);
+      }
+    })();
   </script>
 </body>
 
