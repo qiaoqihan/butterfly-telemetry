@@ -1567,15 +1567,21 @@
         });
       },
       // 0x81 气压计（小端，8字节）
+      // 气压高度偏置校准：实测海拔 - 气压换算高度
+      // 例：实测海拔 408m，气压换算 530m，则偏置 = 408 - 530 = -122m
+      // 修改下方 BARO_ALT_OFFSET 为你的偏置值即可校准
       parseBaro(p) {
         if (p.length < 8) return;
+        const BARO_ALT_OFFSET = -122;  // 气压高度偏置（米），实测海拔 - 气压换算高度
         // const pressure_raw = this.readInt32LE(p, 0);  // 原始值（未使用）
         const pressure_hPa = this.readUInt24LE(p, 4) / 100;  // hPa
         // 异常剔除：气压物理范围 300~1100 hPa（覆盖珠峰到海平面）
         if (!isFinite(pressure_hPa) || pressure_hPa < 300 || pressure_hPa > 1100) return;
         // 气压换算高度（国际大气压标准公式）
         // h = 44330 * (1 - (P/1013.25)^(1/5.255))
-        const altitude = 44330 * (1 - Math.pow(pressure_hPa / 1013.25, 1 / 5.255));
+        const altitudeRaw = 44330 * (1 - Math.pow(pressure_hPa / 1013.25, 1 / 5.255));
+        // 应用偏置校准
+        const altitude = altitudeRaw + BARO_ALT_OFFSET;
         // 高度异常保护（-500m ~ +15000m）
         if (!isFinite(altitude) || altitude < -500 || altitude > 15000) return;
         Dispatcher.handle({
