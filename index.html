@@ -325,7 +325,8 @@
           <p class="text-[11px] text-mute">Biomimetic Butterfly Aircraft Telemetry Dashboard</p>
         </div>
         <!-- 版本标识：增强版才显示 -->
-        <span id="modeBadge" class="hidden ml-2 px-2 py-0.5 text-[10px] rounded border border-orange/40 text-orange bg-orange/10">PRO</span>
+        <span id="modeBadge"
+          class="hidden ml-2 px-2 py-0.5 text-[10px] rounded border border-orange/40 text-orange bg-orange/10">PRO</span>
       </div>
 
       <!-- 状态总览 -->
@@ -433,8 +434,8 @@
             <div id="detectIdle"
               class="absolute inset-0 flex flex-col items-center justify-center text-center text-mute bg-black/40 backdrop-blur-sm z-20">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="1.3">
-                <circle cx="12" cy="12" r="9"/>
-                <path d="M12 7v6M12 16v.01"/>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v6M12 16v.01" />
               </svg>
               <p class="mt-2 text-[12px]">点击"开启识别"启动目标检测</p>
             </div>
@@ -592,13 +593,41 @@
         <div id="rcList" class="flex flex-col gap-1 flex-1 min-h-0 overflow-auto pr-1"></div>
       </div>
 
-      <!-- 电机角度 -->
+      <!-- 扑翼控制 -->
       <div class="card p-3 col-span-3 flex flex-col min-h-0">
         <div class="flex items-center justify-between mb-2 flex-shrink-0">
-          <h2 class="title-bar text-sm font-semibold">左右电机角度</h2>
+          <h2 class="title-bar text-sm font-semibold">扑翼控制</h2>
           <span class="text-[11px] text-mute">-90~90°</span>
         </div>
         <div id="motorList" class="grid grid-cols-2 gap-2 flex-1 min-h-0 content-center"></div>
+        <!-- 模式状态（0x85） -->
+        <div class="mt-2 pt-2 border-t border-slate-800/60 flex-shrink-0">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[11px] text-mute">模式状态</span>
+            <div class="flex items-center gap-2">
+              <span id="modeRunningDot" class="dot dot-off"></span>
+              <span id="modeRunningTxt" class="text-[11px] text-mute big-num">未运行</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-4 gap-1.5 text-[11px]">
+            <div class="bg-panel2/70 rounded px-1.5 py-1 border border-slate-800">
+              <div class="text-mute">阶段</div>
+              <div id="modeStage" class="text-cyan big-num">--</div>
+            </div>
+            <div class="bg-panel2/70 rounded px-1.5 py-1 border border-slate-800">
+              <div class="text-mute">准备子态</div>
+              <div id="modePrepSub" class="text-cyan big-num">--</div>
+            </div>
+            <div class="bg-panel2/70 rounded px-1.5 py-1 border border-slate-800">
+              <div class="text-mute">频率</div>
+              <div id="modeFreq" class="text-orange big-num">--</div>
+            </div>
+            <div class="bg-panel2/70 rounded px-1.5 py-1 border border-slate-800">
+              <div class="text-mute">振幅</div>
+              <div id="modeAmp" class="text-orange big-num">--</div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1287,7 +1316,7 @@
       // 已知帧类型及其期望 Payload 长度（用于 CRC 失败时的容错判断）
       TYPE_LEN: {
         0x02: 15, 0x1E: 6, 0x80: 18, 0x81: 8, 0x82: 4,
-        0x83: 16, 0x84: 22, 0x85: 4, 0x86: 8, 0x87: 18, 0x88: 23
+        0x83: 16, 0x84: 22, 0x85: 6, 0x86: 8, 0x87: 18, 0x88: 23
       },
 
       // CRC8 查表（多项式 0xD5，与协议文档一致）
@@ -1495,9 +1524,10 @@
           case 0x81: this.parseBaro(p); break;         // 气压计（小端）
           case 0x82: this.parseMotor(p); break;        // 电机角度（小端）
           case 0x84: this.parseRC(p); break;           // 通道值（小端，11路）
+          case 0x85: this.parseModeStatus(p); break;   // 模式状态（小端）
           case 0x88: this.parseGPSRaw(p); break;       // GPS原始数据（小端）
           // 0x02 标准CRSF GPS 不使用（仅采用 0x88 GPS原始数据帧）
-          // 0x85 模式状态 / 0x86 RX统计 等不处理（按需求不额外添加）
+          // 0x86 RX统计 / 0x87 SFLP / 0x83 测试帧 暂不处理
         }
       },
       // 0x80 IMU原始数据（小端，18字节）
@@ -1573,6 +1603,31 @@
           motor_angle: [toAngle(leftRaw), toAngle(rightRaw)]
         });
       },
+      // 0x85 模式状态（小端，6字节）
+      // 字段：running/stage/prep_sub/freq_x10/amplitude
+      parseModeStatus(p) {
+        if (p.length < 4) return;
+        const running = p[0];                         // 0=停止, 1=工作
+        const stage = p[1];                         // 0=准备阶段, 1=起飞阶段
+        const prepSub = p[2];                         // 准备子状态: 0=空闲/1=立翅/2=平翅中位校准/3=偏置校准
+        const freqX10 = p[3];                         // 频率×10（起飞阶段有效，如 30=3.0Hz）
+        // amplitude 为 uint16 LE，仅当 payload 完整（6字节）时解析
+        const amplitudeRaw = p.length >= 6 ? this.readUInt16LE(p, 4) : 0;
+        // 异常剔除：枚举值越界视为无效
+        if (running > 1 || stage > 1 || prepSub > 3) return;
+        // 振幅映射为角度：raw / 4096 * 360
+        let ampAngle = amplitudeRaw / 4096 * 360;
+        if (ampAngle > 360) ampAngle = 360;
+        Dispatcher.handle({
+          mode_status: {
+            running: running === 1,
+            stage: stage,                // 0=准备, 1=起飞
+            prep_sub: prepSub,           // 0=空闲/1=立翅/2=平翅中位校准/3=偏置校准
+            freq: freqX10 / 10,          // Hz
+            amplitude: Math.round(ampAngle)   // 角度（0~90°）
+          }
+        });
+      },
       // 0x84 通道值（小端，22字节，CH1~CH11）
       parseRC(p) {
         if (p.length < 22) return;
@@ -1603,11 +1658,11 @@
         if (!isFinite(sats) || sats > 50) sats = 0;
         // 经纬度物理范围：lat ±90，lon ±180；超范围或 (0,0) 且 sats=0 视为未定位
         let validFix = (sats > 0 && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 &&
-                       !(lat === 0 && lon === 0));
+          !(lat === 0 && lon === 0));
         // 构造 UTC 时间戳（秒）
         let ts = Math.floor(Date.now() / 1000);
         if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 &&
-            day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 60) {
+          day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 60) {
           const d = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
           ts = Math.floor(d.getTime() / 1000);
         }
@@ -1669,6 +1724,16 @@
           this.lastTs = now;
         }
 
+        // 模式状态：只要收到任意有效数据即视为"运行中"
+        // 不再依赖 0x85 模式帧的 running 字段
+        const runDot = document.getElementById('modeRunningDot');
+        const runTxt = document.getElementById('modeRunningTxt');
+        if (runDot && !runDot.classList.contains('dot-on')) {
+          runDot.className = 'dot dot-on';
+          runTxt.textContent = '运行中';
+          runTxt.className = 'text-[11px] text-cyan big-num';
+        }
+
         // 分发各模块
         if (obj.gyro) UI.updateGyro(obj.gyro);
         if (obj.accel) { UI.updateAccel(obj.accel); Butterfly3D && Butterfly3D.updateAccel && Butterfly3D.updateAccel(obj.accel); }
@@ -1677,6 +1742,7 @@
         if (obj.altitude !== undefined) UI.updateAltitude(obj.altitude);
         if (obj.rc_channel) UI.updateRC(obj.rc_channel);
         if (obj.motor_angle) { UI.updateMotor(obj.motor_angle); Butterfly3D && Butterfly3D.updateMotor && Butterfly3D.updateMotor(obj.motor_angle); }
+        if (obj.mode_status) UI.updateModeStatus(obj.mode_status);
         if (obj.gps) UI.updateGPS(obj.gps);
       }
     };
@@ -1766,7 +1832,7 @@
           // 右翅：0°朝3点（右），正角度向上扇动（向12点）
           const cfg = [
             { label: '左翅 L', base: -90, tip: '九点', zeroSvgAngle: 270 }, // SVG标准角度: 9点=270°
-            { label: '右翅 R', base:  90, tip: '三点', zeroSvgAngle: 90  }  // SVG标准角度: 3点=90°
+            { label: '右翅 R', base: 90, tip: '三点', zeroSvgAngle: 90 }  // SVG标准角度: 3点=90°
           ];
           for (let i = 0; i < MOTOR_COUNT; i++) {
             const c = cfg[i];
@@ -1775,13 +1841,13 @@
             // 刻度：0°(外侧水平) / +90°(12点上) / -90°(6点下)
             // 翅膀角度 → SVG标准角度(0=上,顺时针) 的映射
             const angleMap = {
-              0:   c.zeroSvgAngle,           // 0° → 外侧水平
-              90:  0,                        // +90° → 12点（上）
+              0: c.zeroSvgAngle,           // 0° → 外侧水平
+              90: 0,                        // +90° → 12点（上）
               '-90': 180                     // -90° → 6点（下）
             };
             const ticks = [
-              { va: 0,   lbl: '0'   },
-              { va: 90,  lbl: '+90' },
+              { va: 0, lbl: '0' },
+              { va: 90, lbl: '+90' },
               { va: -90, lbl: '-90' }
             ];
             const tickLines = ticks.map(t => {
@@ -1797,9 +1863,9 @@
               const r = (svgA - 90) * Math.PI / 180;
               return { x: (50 + R * Math.cos(r)).toFixed(1), y: (50 + R * Math.sin(r) + 2.5).toFixed(1) };
             };
-            const p0  = lblPos(0, 50);
-            const pP  = lblPos(90, 50);
-            const pN  = lblPos(-90, 50);
+            const p0 = lblPos(0, 50);
+            const pP = lblPos(90, 50);
+            const pN = lblPos(-90, 50);
             // 扇形扇动区域（外侧半圆）
             const isLeft = c.base === -90;
             const arcPath = isLeft
@@ -1841,6 +1907,25 @@
           const rot = i === 0 ? (-90 + v) : (90 - v);
           needle.style.transform = `rotate(${rot}deg)`;
         }
+      },
+      // 0x85 模式状态更新（运行状态由数据流自动判定，这里只更新阶段/子态/频率/振幅）
+      updateModeStatus(m) {
+        // 阶段：0=准备 / 1=起飞
+        const stageMap = { 0: '准备', 1: '起飞' };
+        document.getElementById('modeStage').textContent = stageMap[m.stage] ?? '--';
+        // 准备子状态映射
+        const prepSubMap = { 0: '空闲', 1: '立翅', 2: '中位校准', 3: '偏置校准' };
+        // 频率（Hz）与振幅（角度）：仅起飞阶段有效，准备阶段显示 --
+        if (m.stage === 1) {
+          document.getElementById('modeFreq').textContent = m.freq.toFixed(1) + ' Hz';
+          document.getElementById('modeAmp').textContent = m.amplitude + '°';
+        } else {
+          document.getElementById('modeFreq').textContent = '--';
+          document.getElementById('modeAmp').textContent = '--';
+        }
+        // 准备子态：仅在准备阶段显示，起飞阶段显示 --
+        document.getElementById('modePrepSub').textContent =
+          m.stage === 0 ? (prepSubMap[m.prep_sub] ?? '--') : '--';
       },
       updateGPS(g) {
         document.getElementById('gpsLon').textContent = g.lon !== undefined ? g.lon.toFixed(6) : '--';
@@ -2098,6 +2183,24 @@
               this.leftWing + (Math.random() - 0.5) * 0.5,
               this.rightWing + (Math.random() - 0.5) * 0.5,
             ],
+            // 模式状态：模拟运行中状态，阶段随时间在准备/起飞间切换
+            mode_status: (() => {
+              // 0~10s 准备阶段，10~20s 起飞阶段，循环
+              const cycle = Math.floor(t / 10) % 2;
+              const stage = cycle;  // 0=准备, 1=起飞
+              const prepProgress = (t % 10) / 10;
+              // 准备子状态按时间推进：空闲→立翅→中位校准→偏置校准
+              const prepSub = stage === 0
+                ? (prepProgress < 0.25 ? 0 : prepProgress < 0.5 ? 1 : prepProgress < 0.75 ? 2 : 3)
+                : 0;
+              return {
+                running: true,
+                stage: stage,
+                prep_sub: prepSub,
+                freq: stage === 1 ? 3.0 + Math.sin(t * 0.5) * 0.5 : 0,
+                amplitude: stage === 1 ? 80 + Math.floor(Math.sin(t) * 10) : 0  // 已是角度值（0~90°）
+              };
+            })(),
             gps: {
               lon: lon + Math.sin(t * 0.1) * 0.0005,
               lat: lat + Math.cos(t * 0.1) * 0.0005,
@@ -2381,6 +2484,9 @@
         const rightWingGroup = new THREE.Group();
         leftWingGroup.add(wingLF, wingLB);
         rightWingGroup.add(wingRF, wingRB);
+        // 翅膀根部沿 X 轴偏移，避免 90° 时左右翅重合
+        leftWingGroup.position.x = -0.18;
+        rightWingGroup.position.x = 0.18;
         butterfly.add(leftWingGroup, rightWingGroup);
 
         // 初始姿态：翅膀水平展开
@@ -2424,8 +2530,8 @@
           // 左翅（-X 侧）：正角度 → rotation.z 负值 → 翅尖向上（方向相反）
           const targetLeft = -leftWingAngle * Math.PI / 180;
           const targetRight = rightWingAngle * Math.PI / 180;
-          leftWingGroup.rotation.z += (targetLeft - leftWingGroup.rotation.z) * 0.3;
-          rightWingGroup.rotation.z += (targetRight - rightWingGroup.rotation.z) * 0.3;
+          leftWingGroup.rotation.z += (targetLeft - leftWingGroup.rotation.z) * 0.55;
+          rightWingGroup.rotation.z += (targetRight - rightWingGroup.rotation.z) * 0.55;
 
           // 蝴蝶整体姿态：应用 pitch/roll/yaw（度数 → 弧度）
           butterfly.rotation.x = pitch * Math.PI / 180;
@@ -2473,9 +2579,9 @@
             // 滚转角 roll（绕 Z 轴）：由 X、Z 轴加速度计算
             // 注意：机体 Z 轴朝前，roll 对应绕机身轴线旋转
             const targetRoll = Math.atan2(ax, Math.sqrt(ay * ay + az * az)) * 180 / Math.PI;
-            // 平滑滤波（低通），避免高频抖动
-            pitch += (targetPitch - pitch) * 0.15;
-            roll += (targetRoll - roll) * 0.15;
+            // 平滑滤波（低通），避免高频抖动，系数 0.4 平衡响应速度与稳定性
+            pitch += (targetPitch - pitch) * 0.4;
+            roll += (targetRoll - roll) * 0.4;
             // yaw 无法用加速度计计算（需磁力计），保持不变或缓慢回正
             // 这里不做处理，yaw 保持 0
           },
