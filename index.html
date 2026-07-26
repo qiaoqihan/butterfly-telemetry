@@ -374,7 +374,7 @@
           <div class="flex items-center gap-2">
             <span id="camRes" class="text-[11px] text-mute">--</span>
             <button id="btnDetect" class="btn btn-ghost" disabled title="开启/关闭本地识别（COCO-SSD）">本地识别</button>
-            <button id="btnDoubao" class="btn btn-ghost" disabled title="调用豆包大模型识别" style="display:none">豆包识别</button>
+            <button id="btnDoubao" class="btn btn-ghost" disabled title="调用AI大模型识别" style="display:none">AI识别</button>
             <button id="btnCamClose" class="btn btn-danger" disabled>关闭摄像头</button>
           </div>
         </div>
@@ -2259,10 +2259,10 @@
         box.style.top = '40px';  // 避开顶部 CAM·识别 标签
         box.innerHTML = `
           <div class="flex items-center justify-between mb-1">
-            <span class="text-[11px] text-orange font-semibold">豆包大模型识别</span>
+            <span class="text-[11px] text-orange font-semibold">AI 大模型识别</span>
             <span id="doubaoStatus" class="text-[10px] text-mute">待启动</span>
           </div>
-          <div id="doubaoResult" class="text-[11px] text-txt leading-relaxed">点击「豆包识别」开始</div>
+          <div id="doubaoResult" class="text-[11px] text-txt leading-relaxed">点击「AI识别」开始</div>
         `;
         detView.appendChild(box);
         this.resultEl = document.getElementById('doubaoResult');
@@ -2284,7 +2284,7 @@
         this.statusEl.className = 'text-[10px] text-cyan';
         await this.run();
         btn.disabled = false;
-        btn.textContent = '豆包识别';
+        btn.textContent = 'AI识别';
       },
 
       stop() {
@@ -2318,7 +2318,7 @@
             this.statusEl.className = 'text-[10px] text-red-400';
             // 405/404 通常是本地静态服务器不支持 serverless function，给明确提示
             if (resp.status === 404 || resp.status === 405) {
-              this.resultEl.innerHTML = `<span class="text-red-400">后端代理未部署（${resp.status}）</span><br><span class="text-[10px] text-mute">请使用 <b class="text-cyan">vercel dev</b> 启动本地环境，或将项目部署到 Vercel 后再启用豆包识别</span>`;
+              this.resultEl.innerHTML = `<span class="text-red-400">后端代理未部署（${resp.status}）</span><br><span class="text-[10px] text-mute">请使用 <b class="text-cyan">vercel dev</b> 启动本地环境，或将项目部署到 Vercel 后再启用 AI 识别</span>`;
             } else {
               this.resultEl.innerHTML = `<span class="text-red-400">请求失败：${resp.status}</span><br><span class="text-[10px] text-mute">${err.slice(0, 200)}</span>`;
             }
