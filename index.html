@@ -1947,8 +1947,9 @@
         if (sats >= 4) { status.textContent = '已定位'; status.className = 'text-[11px] text-cyan'; }
         else if (sats > 0) { status.textContent = '信号弱'; status.className = 'text-[11px] text-orange'; }
         else { status.textContent = '未定位'; status.className = 'text-[11px] text-mute'; }
-        // 更新地图位置与轨迹
-        if (g.lon !== undefined && g.lat !== undefined && sats > 0) {
+        // 更新地图位置与轨迹：仅在有效定位（valid=true）时记录轨迹
+        // 未定位（sats=0 或经纬度无效）时不更新地图，避免画到 (0,0) 错误位置
+        if (g.valid) {
           GpsMap.update(g.lat, g.lon);
         }
       }
